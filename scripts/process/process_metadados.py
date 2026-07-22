@@ -12,12 +12,16 @@ manifesto.
 """
 import datetime
 import pandas as pd
+from pathlib import Path
 import pyarrow.parquet as pq
 
 from scripts.common.paths import RAW_DIR
 from scripts.config.fontes import FONTES
 
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
+
 ARQUIVO_SAIDA = RAW_DIR / "raw_onco360_metadados.csv"
+ARQUIVO_SAIDA_COPIA = BASE_DIR / "docs" / "raw_onco360_metadados.csv"
 
 
 def _contar_registros(caminho) -> int | None:
@@ -88,7 +92,11 @@ def main():
 
     ARQUIVO_SAIDA.parent.mkdir(parents=True, exist_ok=True)
     df.to_csv(ARQUIVO_SAIDA, index=False, encoding="utf-8-sig")
-    print(f"✔ Metadados salvos em {ARQUIVO_SAIDA} ({len(df)} linha(s), {len(faltando)} faltando).")
+    
+    ARQUIVO_SAIDA_COPIA.parent.mkdir(parents=True, exist_ok=True)
+    df.to_csv(ARQUIVO_SAIDA_COPIA, index=False, encoding="utf-8-sig")
 
+    print(f"✔ Metadados salvos em {ARQUIVO_SAIDA} ({len(df)} linha(s), {len(faltando)} faltando).")
+    print(f"✔ Cópia salva em {ARQUIVO_SAIDA_COPIA}")
 if __name__ == "__main__":
     main()

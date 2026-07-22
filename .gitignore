@@ -18,7 +18,6 @@ venv/
 *.DBF
 *.log
 *.parquet
-*.csv
 *.xls
 *.xlsx
 *.json

@@ -47,7 +47,7 @@ def criar_s3_client():
 
 def enviar_pastas_para_minio() -> bool:
     # Definimos as pastas que queremos subir
-    pastas_alvo = [RAW_DIR, LANDING_DIR]
+    pastas_alvo = [RAW_DIR]
     s3_client = criar_s3_client()
     
     sucesso_total = True
