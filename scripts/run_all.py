@@ -21,7 +21,7 @@ Ao final, sempre roda scripts/process/process_metadados.py (reflete o
 estado atual de data/raw/, independente de ter havido novidade ou não).
 
 Publicação (bucket + Kaggle): o bucket SEMPRE roda (é idempotente --
-scripts/load/load_to_bucket.py já compara cada arquivo contra o que já
+scripts/kaggle/load_to_bucket.py já compara cada arquivo contra o que já
 está PUBLICADO no bucket, não contra o que foi baixado nesta execução
 -- importante porque um arquivo pode existir localmente sem nunca ter
 sido publicado, ex: rodou o extract manualmente antes do run_all.py).
@@ -146,7 +146,7 @@ def main():
         # sem nunca ter sido publicado -- gatear pela novidade do
         # extract perderia esse arquivo pra sempre.
         print(f"\n{'=' * 70}\nBucket\n{'=' * 70}")
-        resultado_bucket = _run_module("scripts.load.load_to_bucket")
+        resultado_bucket = _run_module("scripts.kaggle.load_to_bucket")
         if resultado_bucket == ERRO:
             sucesso_geral = False
 
