@@ -4,8 +4,6 @@
 [![Kaggle](https://img.shields.io/badge/Dataset-Kaggle-7ab3d4?labelColor=0d2137&logo=kaggle&logoColor=7ab3d4)](https://www.kaggle.com/datasets/rafatrindade/onco-360)
 [![GitHub Stars](https://img.shields.io/github/stars/rafa-trindade/onco-360-foundation?style=flat&labelColor=0d2137&color=4a7fa5)](https://github.com/rafa-trindade/onco-360-foundation)
 
-## Sobre o Projeto
-
 **Onco-360** nasceu da necessidade de reunir, num único lugar e num formato pronto para análise, os dados públicos brasileiros sobre câncer que hoje estão espalhados entre sistemas diferentes do Ministério da Saúde, do IBGE, do INCA e da Controladoria-Geral da União - cada um com seu próprio formato, sua própria periodicidade e sua própria forma de acesso.
 
 Idealizado e mantido por **[Rafael Trindade](https://www.linkedin.com/in/rafatrindade/)**, o projeto reúne mortalidade por câncer, rede assistencial habilitada em oncologia (com sinalizador adulto/pediátrico, endereço, geolocalização e leitos reais), procedimentos realizados no SUS, diagnóstico e rastreamento autorreferidos pela população, repasses públicos federais por instituição, e o perfil de incidência e atendimento hospitalar consolidado pelo INCA - cuidadosamente curados, padronizados e documentados, prontos para que pesquisadores, cientistas de dados e profissionais de saúde possam conduzir seus próprios estudos de forma organizada e reproduzível.
