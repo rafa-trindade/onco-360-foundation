@@ -1,9 +1,9 @@
-"""
-Códigos de saída padronizados para scripts de extract/process/load.
+"""Códigos de saída para orquestração no run_all.py.
 
-  SUCESSO       (0) -- rodou certo E há dado novo
-  SEM_NOVIDADE  (2) -- rodou certo, mas nada mudou desde a última vez
-  ERRO          (1) -- falhou de verdade
+Estados possíveis:
+  SUCESSO (0): Execução concluída e novos dados extraídos -> aciona o process.
+  ERRO (1): Falha na execução -> interrompe a esteira e reporta erro.
+  SEM_NOVIDADE (2): Execução concluída sem dados novos (idempotência) -> pula o process sem relatar erro.
 """
 SUCESSO = 0
 ERRO = 1
