@@ -12,7 +12,7 @@ O dataset final está disponível no [Kaggle](https://www.kaggle.com/datasets/ra
 
 O objetivo de longo prazo é consolidar estudos derivados deste hub em **[github.com/rafa-trindade/oncoped-360](https://github.com/rafa-trindade/oncoped-360)** - um repositório de pesquisa e análise dedicado especificamente ao **câncer infanto-juvenil**, ainda em estruturação, que vai se apoiar nos recortes pediátricos já sinalizados nas bases deste hub (habilitações pediátricas do CNES, faixas etárias da PNS, incidência infanto-juvenil do INCA) para produzir um painel público e interativo sobre o tema.
 
----
+![header](docs/images/onco-banner-2.png)
 
 ## 📊 Fontes de Dados e Escopo
 
