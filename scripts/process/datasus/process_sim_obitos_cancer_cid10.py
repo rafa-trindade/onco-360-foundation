@@ -1,40 +1,57 @@
+"""SIM - Óbitos por Câncer, CID-10 Consolidado (1996-atual) (process).
+
+Filtra os óbitos por neoplasia maligna (CAUSABAS C00-C97) direto dos .dbc
+da landing, publica em datasus_sim/obitos_cancer_cid10.parquet (com
+CO_IBGE_RESIDENCIA normalizado) e atualiza o resumo anual compartilhado.
+
+Idempotência: o parquet publicado é mesclado por ARQUIVO_ORIGEM (ano
+revisado substitui a versão anterior) e o manifesto da pasta registra os
+.dbc já incorporados. Um ano que antes existia como preliminar tem sua
+linha de resumo substituída pela do consolidado.
 """
-SIM - Óbitos por Câncer, CID-10 Consolidado (1996-atual) (process)
+import sys
 
-Filtra direto do .dbc na Landing (registro a registro) -- nunca
-materializa a base geral de mortalidade CID-10 em disco.
+from scripts.common import exit_codes
+from scripts.common.paths import LANDING_DIR
+from scripts.process.datasus.common.base_process_dbc_stream import processar_fonte_ftp_incremental
+from scripts.process.datasus.common.sim.filtros_cancer import filtro_chunk_cancer_cid10
+from scripts.process.datasus.common.sim.decodificar_sim import (
+    montar_query_sim_cid10, baixar_sinonimos_municipio,
+)
+from scripts.process.datasus.common.sim.resumo_sim_stream import atualizar_resumo_anual
+from scripts.process.datasus.common.sim.resumo_cancer import extrair_ano_cid10
 
-Saídas:
-  data/raw/raw_sim_obitos_cancer_cid10.parquet    -- óbitos por câncer, registro a registro
-  data/raw/raw_sim_obitos_cancer_resumo_anual.csv -- resumo unificado (upsert por ano)
+PASTA_BUCKET = "datasus_sim"
+NOME_ARQUIVO_FINAL = "obitos_cancer_cid10.parquet"
+FONTE_RESUMO = "CID10"
+COLUNA_MUNICIPIO = "CODMUNRES"
 
-Nota: quando um ano aqui processado também existir como preliminar no
-resumo (ex: 2026 já veio como PRELIM antes de ser consolidado), a linha
-do preliminar é substituída pela do consolidado -- comportamento
-intencional (ver resumo_cancer.py).
-"""
-from scripts.common.paths import LANDING_DIR, RAW_DIR
-from scripts.process.datasus.base_process_dbc import processar_diretorio_dbc_filtrado
-from scripts.process.datasus.common.filtros_cancer import filtro_cancer_cid10
-from scripts.process.datasus.common.colunas_sim import COLUNAS_DECLARACAO_OBITO
-from scripts.process.datasus.common.resumo_cancer import atualizar_resumo_anual, extrair_ano_cid10
-from scripts.process.datasus.common.normalizar_municipio import adicionar_municipio_normalizado
+DBC_DIR = LANDING_DIR / "dbc_sim_declaracao_obito_cid10"
 
-def main():
-    dbc_dir = LANDING_DIR / "dbc_sim_declaracao_obito_cid10"
-    parquet_final = RAW_DIR / "raw_sim_obitos_cancer_cid10.parquet"
-    resumo_csv = RAW_DIR / "raw_sim_obitos_cancer_resumo_anual.csv"
 
-    def callback(detalhe):
-        atualizar_resumo_anual([detalhe], "CID10", extrair_ano_cid10, resumo_csv)
+def main() -> int:
+    totais = {}
+    sinonimos = baixar_sinonimos_municipio()
+    if sinonimos is None:
+        print("[AVISO] geo_sinonimos_municipio ausente -- publicando sem COD_MUNICIPIO_ATUAL. "
+              "Processe a fonte macroregiao antes para resolver códigos municipais extintos.")
 
-    houve_dado, _ = processar_diretorio_dbc_filtrado(
-        dbc_dir, parquet_final, filtro_cancer_cid10,
-        colunas_padrao=COLUNAS_DECLARACAO_OBITO, callback_arquivo=callback
+    def transformacao(cols):
+        tem_idade = "IDADE" in cols
+        return montar_query_sim_cid10(cols, COLUNA_MUNICIPIO, tem_idade, sinonimos)
+
+    codigo = processar_fonte_ftp_incremental(
+        DBC_DIR, PASTA_BUCKET, NOME_ARQUIVO_FINAL,
+        filtro_chunk=filtro_chunk_cancer_cid10,
+        query_transformacao=transformacao,
+        contador_totais=totais,
     )
 
-    if houve_dado:
-        adicionar_municipio_normalizado(parquet_final)
+    if codigo == exit_codes.SUCESSO and totais:
+        atualizar_resumo_anual(totais, FONTE_RESUMO, extrair_ano_cid10, NOME_ARQUIVO_FINAL)
+
+    return codigo
+
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

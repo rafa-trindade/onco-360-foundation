@@ -3,6 +3,7 @@ Colunas fixas da Declaração de Óbito (SIM/DATASUS), compartilhadas entre
 o process do consolidado e do preliminar -- os dois usam exatamente a
 mesma estrutura de colunas.
 """
+
 COLUNAS_DECLARACAO_OBITO = [
     "CONTADOR", "ORIGEM", "TIPOBITO", "DTOBITO", "HORAOBITO", "NATURAL", "CODMUNNATU", "DTNASC", "IDADE", "SEXO",
     "RACACOR", "ESTCIV", "ESC", "ESC2010", "SERIESCFAL", "OCUP", "CODMUNRES", "LOCOCOR", "CODESTAB", "ESTABDESCR",

@@ -1,166 +1,183 @@
-#!/usr/bin/env python3
-"""
-Orquestrador do pipeline onco-360-foundation.
+"""Orquestrador do pipeline (Extract -> Process -> Load).
+
+Regras de arquitetura e execução:
+- Execução sequencial: O paralelismo corrompe o `_manifest.json` em fontes que compartilham o mesmo `pasta_bucket`.
+- `process` só é acionado se o `extract` reportar dado novo (otimização de tempo).
+- `load` só é acionado automaticamente se houver novidade nas fontes automáticas. Para manuais, usar `--force-load`.
 
 Uso:
-    python run_all.py                  # roda tudo: fontes -> metadados -> bucket -> Kaggle (se houver novidade)
-    python run_all.py --only cnes_estabelecimentos   # roda só uma fonte (ver scripts/config/fontes.py)
-    python run_all.py --process-only    # pula o extract de todas as fontes automatizadas
-    python run_all.py --force-load      # publica mesmo sem novidade detectada (ex: após atualizar fonte manual/estática)
-    python run_all.py --no-load         # nunca publica (bucket/Kaggle), só roda extract+process+metadados
-
-Cada Fonte em scripts/config/fontes.py tem um `tipo`:
-    "pipeline"        -- extract + process automatizados
-    "pipeline_manual" -- só process automatizado (extract é manual, ex: PNS)
-    "estatico"        -- sem script nenhum (arquivo trazido manualmente pro data/raw/, ex: INCA)
-Fontes sem extract_modules/process_modules (estático, ou pendente como o
-Portal da Transparência) são identificadas e puladas com uma mensagem
-clara, não tratadas como erro.
-
-Ao final, sempre roda scripts/process/process_metadados.py (reflete o
-estado atual de data/raw/, independente de ter havido novidade ou não).
-
-Publicação (bucket + Kaggle): o bucket SEMPRE roda (é idempotente --
-scripts/kaggle/load_to_bucket.py já compara cada arquivo contra o que já
-está PUBLICADO no bucket, não contra o que foi baixado nesta execução
--- importante porque um arquivo pode existir localmente sem nunca ter
-sido publicado, ex: rodou o extract manualmente antes do run_all.py).
-O Kaggle só roda se o bucket realmente subiu algo novo (ou com
---force-load) -- evita criar uma versão nova no Kaggle à toa.
+    python -m scripts.run_all [--so id1,id2] [--pular id1] [--process-only] [--force-load] [--no-load]
 """
 import argparse
-import runpy
+import importlib.util
+import subprocess
 import sys
-import traceback
+import time
 
-from scripts.config.fontes import FONTES, Fonte
 from scripts.common import exit_codes
+from scripts.config.fontes import FONTES, Fonte
 
-SUCESSO, SEM_NOVIDADE, ERRO = "sucesso", "sem_novidade", "erro"
+ROTULO = {
+    exit_codes.SUCESSO: "✔ SUCESSO",
+    exit_codes.SEM_NOVIDADE: "= SEM NOVIDADE",
+    exit_codes.ERRO: "✖ ERRO",
+}
+
+LOAD_MODULES = [
+    "scripts.process.process_metadados",
+    "scripts.kaggle.load_to_kaggle",
+]
 
 
-def _run_module(module_path: str) -> str:
-    """
-    Executa um módulo exatamente como `python -m module_path` executaria
-    -- via runpy, com run_name="__main__". Funciona com ou sem o script
-    expor uma função main().
-
-    Retorna SUCESSO, SEM_NOVIDADE ou ERRO -- lido do exit code do
-    script, se ele usar scripts.common.exit_codes; senão assume SUCESSO.
-    """
-    print(f"  -> {module_path}")
+def _modulo_existe(modulo: str) -> bool:
     try:
-        runpy.run_module(module_path, run_name="__main__")
-        return SUCESSO
-    except SystemExit as e:
-        codigo = e.code if isinstance(e.code, int) else (0 if e.code is None else 1)
-        if codigo == exit_codes.SUCESSO:
-            return SUCESSO
-        elif codigo == exit_codes.SEM_NOVIDADE:
-            return SEM_NOVIDADE
-        else:
-            print(f"  [ERRO] {module_path} terminou com exit code {codigo}")
-            return ERRO
-    except Exception:
-        print(f"  [ERRO] Falha em {module_path}:")
-        traceback.print_exc()
-        return ERRO
+        return importlib.util.find_spec(modulo) is not None
+    except ModuleNotFoundError:
+        # find_spec levanta (em vez de retornar None) quando um pacote-pai
+        # do caminho não existe -- para o registro, ausente é ausente.
+        return False
 
 
-def rodar_fonte(fonte: Fonte, pular_extract: bool) -> tuple[bool, bool]:
-    """Retorna (ok, teve_novidade_confiavel)."""
-    print(f"\n{'=' * 70}\n{fonte.nome} ({fonte.id}) [{fonte.tipo}]\n{'=' * 70}")
+def validar_registro() -> list[str]:
+    """Valida integridade do catálogo: retorna módulos de fontes.py inexistentes no disco."""
+    return [
+        m
+        for f in FONTES
+        for m in f.extract_modules + f.process_modules
+        if not _modulo_existe(m)
+    ]
 
+
+def rodar_modulo(modulo: str) -> int:
+    """Executa módulo isolado via subprocess (`python -m`).
+    O isolamento previne que chamadas a `sys.exit` ou variáveis globais contaminem a orquestração.
+    """
+    print(f"\n[{modulo}]")
+    return subprocess.run([sys.executable, "-m", modulo]).returncode
+
+
+def rodar_fonte(fonte: Fonte, pular_extract: bool) -> dict:
+    print(f"\n{'=' * 70}")
+    print(f"{fonte.nome} ({fonte.id})")
+    print('=' * 70)
     if fonte.nota:
-        print(f"  Nota: {fonte.nota}")
+        print(f"Nota: {fonte.nota}")
 
-    if not fonte.extract_modules and not fonte.process_modules:
-        print(f"  [SEM SCRIPT] Fonte {fonte.tipo} -- nada a rodar aqui "
-              f"(arquivo já deve estar em data/raw/ manualmente, ou fonte ainda não construída).")
-        print(f"OK: {fonte.id}")
-        return True, False
-
-    houve_erro = False
-    houve_novidade = True  # default: roda o process (extract pulado, ou fonte manual/estática)
+    extract = exit_codes.SEM_NOVIDADE
     novidade_confiavel = False
 
-    if fonte.extract_modules and not pular_extract:
-        resultados = [_run_module(m) for m in fonte.extract_modules]
-        houve_erro = ERRO in resultados
-        houve_novidade = any(r == SUCESSO for r in resultados)
-        novidade_confiavel = houve_novidade
-    elif not fonte.extract_modules and fonte.process_modules:
-        print(f"  [MANUAL] Sem extract automatizado -- assumindo que o dado bruto já foi atualizado manualmente.")
-
-    if houve_erro:
-        print(f"  [PULADO] process não roda -- extract falhou.")
-    elif not houve_novidade and fonte.extract_modules and not pular_extract:
-        print(f"  [PULADO] process não roda -- nenhum dado novo desde a última execução.")
+    if not fonte.automatica:
+        print("[MANUAL] Sem extract automatizado -- assume que MANUAL_DIR já está atualizado.")
+    elif pular_extract:
+        print("[PULADO] extract (--process-only).")
     else:
-        for m in fonte.process_modules:
-            if _run_module(m) == ERRO:
-                houve_erro = True
+        codigos = [rodar_modulo(m) for m in fonte.extract_modules]
+        for m, c in zip(fonte.extract_modules, codigos):
+            print(f"[extract] {m} -> {ROTULO.get(c, f'código {c}')}")
+        if exit_codes.ERRO in codigos:
+            extract = exit_codes.ERRO
+        elif exit_codes.SUCESSO in codigos:
+            extract = exit_codes.SUCESSO
+            novidade_confiavel = True
 
-    ok = not houve_erro
-    print(f"{'OK' if ok else 'COM FALHAS'}: {fonte.id}")
-    return ok, novidade_confiavel
+    if extract == exit_codes.ERRO:
+        print("[PULADO] process não roda -- extract falhou.")
+        return {"id": fonte.id, "extract": extract, "process": exit_codes.SEM_NOVIDADE,
+                "novidade": False}
+
+    # Fontes manuais e flag --process-only delegam ao próprio process a validação de novidade via manifesto.
+    deve_processar = (
+        extract == exit_codes.SUCESSO
+        or not fonte.automatica
+        or pular_extract
+    )
+    if not deve_processar:
+        print("[PULADO] process não roda -- nada novo desde a última execução.")
+        return {"id": fonte.id, "extract": extract, "process": exit_codes.SEM_NOVIDADE,
+                "novidade": False}
+
+    process = exit_codes.SEM_NOVIDADE
+    for m in fonte.process_modules:
+        c = rodar_modulo(m)
+        print(f"[process] {m} -> {ROTULO.get(c, f'código {c}')}")
+        if c == exit_codes.ERRO:
+            process = exit_codes.ERRO
+        elif c == exit_codes.SUCESSO and process != exit_codes.ERRO:
+            process = exit_codes.SUCESSO
+
+    return {"id": fonte.id, "extract": extract, "process": process,
+            "novidade": novidade_confiavel or process == exit_codes.SUCESSO}
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Orquestrador do pipeline onco-360-foundation")
-    parser.add_argument("--only", help="Roda só a fonte com este id (ver scripts/config/fontes.py)")
-    parser.add_argument("--process-only", action="store_true", help="Pula o extract de todas as fontes automatizadas")
+    parser = argparse.ArgumentParser(description="Orquestrador do pipeline flor-de-aco-foundation")
+    parser.add_argument("--so", help="Lista de ids ou pastas de bucket, separados por vírgula")
+    parser.add_argument("--pular", help="Lista de ids ou pastas de bucket a ignorar")
+    parser.add_argument("--process-only", action="store_true", help="Pula o extract")
     parser.add_argument("--force-load", action="store_true",
-                         help="Publica (bucket/Kaggle) mesmo sem novidade detectada")
-    parser.add_argument("--no-load", action="store_true", help="Nunca publica (bucket/Kaggle)")
+                        help="Roda o load mesmo sem novidade (após atualizar fonte manual)")
+    parser.add_argument("--no-load", action="store_true", help="Nunca roda o load")
     args = parser.parse_args()
 
-    alvo = [f for f in FONTES if f.id == args.only] if args.only else FONTES
-    if args.only and not alvo:
-        print(f"Fonte '{args.only}' não encontrada. Fontes disponíveis: {[f.id for f in FONTES]}")
+    faltando = validar_registro()
+    if faltando:
+        print("[FATAL] Módulos registrados em fontes.py que não existem:")
+        for m in faltando:
+            print(f"  {m}")
         sys.exit(1)
 
-    resultados = {f.id: rodar_fonte(f, pular_extract=args.process_only) for f in alvo}
+    fontes = list(FONTES)
+    if args.so:
+        alvos = {x.strip() for x in args.so.split(",")}
+        fontes = [f for f in fontes if f.id in alvos or f.pasta_bucket in alvos]
+    if args.pular:
+        excluir = {x.strip() for x in args.pular.split(",")}
+        fontes = [f for f in fontes if f.id not in excluir and f.pasta_bucket not in excluir]
 
-    print(f"\n{'=' * 70}\nResumo das fontes\n{'=' * 70}")
-    for id_fonte, (ok, _) in resultados.items():
-        print(f"  {'✔' if ok else '✘'} {id_fonte}")
+    if not fontes:
+        print("[AVISO] Nenhuma fonte corresponde aos filtros.")
+        return
 
-    sucesso_geral = all(ok for ok, _ in resultados.values())
+    print(f"Rodando {len(fontes)} fonte(s): {', '.join(f.id for f in fontes)}")
 
-    # Metadados: sempre roda no final, reflete o estado atual de data/raw/
-    print(f"\n{'=' * 70}\nMetadados\n{'=' * 70}")
-    if _run_module("scripts.process.process_metadados") == ERRO:
-        sucesso_geral = False
+    inicio = time.time()
+    resultados = []
+    try:
+        for f in fontes:
+            resultados.append(rodar_fonte(f, pular_extract=args.process_only))
+    except KeyboardInterrupt:
+        print("\n\n[INTERROMPIDO] Ctrl+C. Seguro rodar de novo: cada fonte pula o que já está feito.")
+
+    horas, resto = divmod(time.time() - inicio, 3600)
+    minutos, segundos = divmod(resto, 60)
+
+    print(f"\n\n{'=' * 70}")
+    print(f"RESUMO -- {len(resultados)} de {len(fontes)} fonte(s) em "
+          f"{int(horas)}h{int(minutos):02d}m{int(segundos):02d}s")
+    print('=' * 70)
+    for r in resultados:
+        print(f"  {r['id']:16s} extract={ROTULO.get(r['extract'], '?'):16s} "
+              f"process={ROTULO.get(r['process'], '?')}")
+
+    houve_erro = any(r["extract"] == exit_codes.ERRO or r["process"] == exit_codes.ERRO
+                     for r in resultados)
+    houve_novidade = any(r["novidade"] for r in resultados)
 
     if args.no_load:
         print("\n[LOAD] Pulado (--no-load).")
-    elif not sucesso_geral:
-        print("\n[LOAD] Pulado -- pelo menos uma fonte falhou, não publica dado possivelmente incompleto.")
+    elif houve_erro:
+        print("\n[LOAD] Pulado -- alguma fonte falhou; não publica dado possivelmente incompleto.")
+    elif not (houve_novidade or args.force_load):
+        print("\n[LOAD] Pulado -- nenhuma novidade nesta execução. "
+              "Use --force-load se atualizou uma fonte manual.")
     else:
-        # Bucket: SEMPRE roda (não depende de "houve novidade nesta
-        # execução do extract") -- load_to_bucket.py já compara contra o
-        # que está PUBLICADO no bucket, não contra o que foi baixado
-        # agora. Isso importa porque um arquivo pode já existir
-        # localmente (de uma execução manual anterior, ou de --process-only)
-        # sem nunca ter sido publicado -- gatear pela novidade do
-        # extract perderia esse arquivo pra sempre.
-        print(f"\n{'=' * 70}\nBucket\n{'=' * 70}")
-        resultado_bucket = _run_module("scripts.kaggle.load_to_bucket")
-        if resultado_bucket == ERRO:
-            sucesso_geral = False
+        print(f"\n{'=' * 70}\nLOAD (metadados + Kaggle)\n{'=' * 70}")
+        for m in LOAD_MODULES:
+            if rodar_modulo(m) == exit_codes.ERRO:
+                houve_erro = True
 
-        houve_upload_bucket = resultado_bucket == SUCESSO
-
-        if houve_upload_bucket or args.force_load:
-            print(f"\n{'=' * 70}\nKaggle\n{'=' * 70}")
-            if _run_module("scripts.load.load_to_kaggle") == ERRO:
-                sucesso_geral = False
-        else:
-            print("\n[KAGGLE] Pulado -- nada novo foi enviado ao bucket nesta execução. "
-                  "Use --force-load pra publicar uma versão nova mesmo assim.")
-
-    if not sucesso_geral:
+    if houve_erro:
+        print("\n[AVISO] Pelo menos uma etapa falhou -- revise o log acima.")
         sys.exit(1)
 
 

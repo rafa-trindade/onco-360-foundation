@@ -23,6 +23,8 @@ venv/
 *.json
 
 data/landing/
-data/raw/
+data/processed/
+data/kaggle_publish_cache/
+data/.duckdb_temp/
 debug/
 .kaggle

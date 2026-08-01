@@ -1,21 +1,18 @@
+"""PNS 2013 - Diagnóstico e Tipo de Câncer (process).
+
+Respondentes com diagnóstico médico de câncer (Q120 = Sim), com tipo
+(categórico, 1 por pessoa; a PNS 2019 usa flags binárias), idade no
+diagnóstico e grau de limitação. Posições confirmadas contra o dicionário
+oficial PNS 2013.
 """
-PNS 2013 - Diagnóstico e Tipo de Câncer (process)
+import sys
 
-Filtra os respondentes que relataram diagnóstico médico de câncer
-(Q120 = Sim), com tipo (categórico, 1 tipo por pessoa -- diferente da
-PNS 2019, que virou múltiplas flags binárias), idade no diagnóstico e
-grau de limitação nas atividades.
+from scripts.process.ibge.common.pns_base import (
+    PNS_MANUAL_DIR, decodificar, ler_microdados, finalizar_e_publicar, logger,
+)
 
-Posições confirmadas contra dicionario_PNS_microdados_2013.xls.
-
-Saída: data/raw/raw_pns_2013_diagnostico_cancer.parquet
-"""
-import pandas as pd
-from scripts.common.paths import RAW_DIR
-from scripts.process.ibge.pns_base import PNS_LANDING_DIR, extrair, decodificar, logger
-
-ARQUIVO_ENTRADA = PNS_LANDING_DIR / "PNS_2013.txt"
-ARQUIVO_SAIDA = RAW_DIR / "raw_pns_2013_diagnostico_cancer.parquet"
+ARQUIVO_ENTRADA = PNS_MANUAL_DIR / "PNS_2013.txt"
+NOME_ARQUIVO_FINAL = "pns_2013_diagnostico_cancer.parquet"
 
 MAPA_SEXO = {"1": "Masculino", "2": "Feminino"}
 MAPA_TIPO_CANCER = {
@@ -27,7 +24,6 @@ MAPA_LIMITACAO = {
     "4": "Intensamente", "5": "Muito intensamente",
 }
 
-# (nome_coluna, posicao_inicial, tamanho)
 CAMPOS = [
     ("UF", 1, 2),
     ("ESTRATO", 3, 7),
@@ -43,41 +39,30 @@ CAMPOS = [
     ("LIMITACAO_ATIVIDADES", 1022, 1),
 ]
 
+ORDEM = [
+    "DIAGNOSTICO_CANCER", "TIPO_CANCER", "IDADE_DIAGNOSTICO", "LIMITACAO_ATIVIDADES",
+    "SEXO", "IDADE", "COR_RACA", "COD_UF",
+    "ESTRATO_AMOSTRAL", "UNIDADE_PRIMARIA_AMOSTRAGEM", "NUM_ORDEM_DOMICILIO",
+    "NUM_ORDEM_MORADOR",
+]
 
-def main():
+
+def main() -> int:
     if not ARQUIVO_ENTRADA.exists():
         logger.error(f"Arquivo não encontrado: {ARQUIVO_ENTRADA}")
-        return
+        from scripts.common import exit_codes
+        return exit_codes.ERRO
 
-    logger.info("Iniciando leitura dos microdados PNS 2013...")
-    registros = []
+    logger.info("Lendo microdados PNS 2013 (diagnóstico de câncer)...")
+    df = ler_microdados(ARQUIVO_ENTRADA, CAMPOS, filtro_pos=(1018, 1), filtro_valor="1")
 
-    with open(ARQUIVO_ENTRADA, "r", encoding="utf-8", errors="replace") as f:
-        for i, linha in enumerate(f, 1):
-            if i % 50_000 == 0:
-                logger.info(f"{i} linhas lidas...")
-
-            diagnostico = extrair(linha, 1018, 1)
-            if diagnostico != "1":  # só quem respondeu Sim a Q120
-                continue
-
-            registro = {nome: extrair(linha, pos, tam) for nome, pos, tam in CAMPOS}
-            registros.append(registro)
-
-    logger.info("Convertendo para DataFrame...")
-    df = pd.DataFrame(registros)
-
-    logger.info("Decodificando categorias...")
     df["SEXO"] = df["SEXO"].apply(lambda v: decodificar(v, MAPA_SEXO))
     df["TIPO_CANCER"] = df["TIPO_CANCER"].apply(lambda v: decodificar(v, MAPA_TIPO_CANCER))
     df["LIMITACAO_ATIVIDADES"] = df["LIMITACAO_ATIVIDADES"].apply(lambda v: decodificar(v, MAPA_LIMITACAO))
-    df["DIAGNOSTICO_CANCER"] = "Sim"  # já filtrado, mas explícito na saída
+    df["DIAGNOSTICO_CANCER"] = "Sim"
 
-    logger.info(f"Total de registros com diagnóstico de câncer: {len(df)}")
+    return finalizar_e_publicar(df, NOME_ARQUIVO_FINAL, ORDEM)
 
-    ARQUIVO_SAIDA.parent.mkdir(parents=True, exist_ok=True)
-    df.to_parquet(ARQUIVO_SAIDA, index=False)
-    logger.info(f"✔ Arquivo salvo em: {ARQUIVO_SAIDA}")
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

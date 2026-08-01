@@ -1,102 +1,235 @@
+"""Geração do manifesto/índice (CSV) do bucket, publicado na raiz.
 """
-Gera data/raw/raw_onco360_metadados.csv -- manifesto de todos os
-arquivos publicados no dataset, cruzando o registro central
-(scripts/config/fontes.py) com o que REALMENTE existe em data/raw/.
+import csv
+import logging
+import sys
+from collections import defaultdict
 
-Não confia cegamente no registro: se um arquivo esperado não existir,
-aparece como tal no manifesto (não é omitido). Arquivos que existem em
-data/raw/ mas não estão em nenhuma Fonte do registro (ex: o resumo
-anual do SIM, que é subproduto de 3 fontes diferentes) também entram,
-com descrição genérica -- pra nunca ficar um arquivo "invisível" no
-manifesto.
-"""
-import datetime
-import pandas as pd
-from pathlib import Path
+import pyarrow.fs as pafs
 import pyarrow.parquet as pq
 
-from scripts.common.paths import RAW_DIR
+from zoneinfo import ZoneInfo
+
+from scripts.common import env, exit_codes
+from scripts.common.bucket_sync import get_s3_client
+from scripts.common.paths import BASE_DIR
 from scripts.config.fontes import FONTES
 
-BASE_DIR = Path(__file__).resolve().parent.parent.parent
+logger = logging.getLogger(__name__)
 
-ARQUIVO_SAIDA = RAW_DIR / "raw_onco360_metadados.csv"
-ARQUIVO_SAIDA_COPIA = BASE_DIR / "docs" / "raw_onco360_metadados.csv"
+NOME_ARQUIVO_SAIDA = "onco360-metadados.csv"
+CAMINHO_DOCS = BASE_DIR / "docs" / NOME_ARQUIVO_SAIDA
+
+COLUNAS = [
+    "ARQUIVO",
+    "DIRETORIO",
+    "FONTE_RELACIONADA",
+    "DESCRICAO",
+    "NUM_REGISTROS",
+    "NUM_COLUNAS",
+    "TAMANHO_BYTES",
+    "ULTIMA_ATUALIZACAO",
+]
+
+NOMES_POR_ARQUIVO: dict[str, str] = {
+    "obitos_cancer_cid9.parquet": "SIM - Óbitos por Câncer, CID-9 (1979-1995)",
+    "obitos_cancer_cid10.parquet": "SIM - Óbitos por Câncer, CID-10 (1996-atual_consolidado)",
+    "obitos_cancer_prelim.parquet": "SIM - Óbitos por Câncer, atual_preliminar",
+    "obitos_cancer_resumo_anual.parquet": "SIM - Óbitos por Câncer (Resumo Anual)",
+    "geo_macroregiao.parquet": "Macrorregião de Saúde (geolocalização)",
+    "sinonimos_municipio.parquet": "Códigos Municipais antigos -> Códigos Vigentes",
+    "cnes_instituicoes_oncologia.parquet": "CNES - Instituições habilitadas em Oncologia",
+    "convenios_cancer.parquet": "Convênios Federais em Oncologia (Portal da Transparência)",
+    "painel_oncologia.parquet": "Painel de Oncologia (DATASUS)",
+    "siasus_quimioterapia.parquet": "SIASUS - APAC de Quimioterapia",
+    "siasus_radioterapia.parquet": "SIASUS - APAC de Radioterapia",
+    "siasus_medicamentos_oncologicos.parquet": "SIASUS - APAC de Medicamentos Oncológicos",
+    "pns_2013_diagnostico_cancer.parquet": "PNS 2013 - Diagnóstico e Tipo de Câncer",
+    "pns_2019_diagnostico_cancer.parquet": "PNS 2019 - Diagnóstico e Tipo de Câncer",
+    "pns_2013_rastreamento_colo_utero.parquet": "PNS 2013 - Rastreamento de Colo do Útero",
+    "pns_2019_rastreamento_colo_utero.parquet": "PNS 2019 - Rastreamento de Colo do Útero",
+    "pns_2013_rastreamento_mama.parquet": "PNS 2013 - Rastreamento de Mama",
+    "pns_2019_rastreamento_mama.parquet": "PNS 2019 - Rastreamento de Mama",
+    "cancer_populacional.parquet": "INCA - Registro de Câncer de Base Populacional (RCBP)",
+    "registro_hospitalar.parquet": "INCA - Registro Hospitalar de Câncer (RHC)",
+}
+
+DESCRICOES_POR_ARQUIVO: dict[str, str] = {
+    "obitos_cancer_cid9.parquet":
+        "Óbitos por neoplasia maligna (CAUSABAS 140-208), era CID-9 (1979-1995). ",
+    "obitos_cancer_cid10.parquet":
+        "Óbitos por neoplasia maligna (CAUSABAS C00-C97), CID-10 consolidado (1996-atual). ",
+    "obitos_cancer_prelim.parquet":
+        "Óbitos por câncer (CID-10) dos dados ainda não homologados do ano corrente. ",
+    "obitos_cancer_resumo_anual.parquet":
+        "Resumo anual por fonte (CID9/CID10/PRELIM) ",
+    "geo_macroregiao.parquet":
+        "Referência geográfica por município. ",
+    "sinonimos_municipio.parquet":
+        "De-para de código municipal antigo -> código vigente (derivado do MUNSINON/CADMUN). ",
+    "cnes_instituicoes_oncologia.parquet":
+        "Instituições de saúde habilitadas em alta complexidade em oncologia no SUS, uma linha por instituição, com habilitações, tipo, esfera, leitos e localização. ",
+    "convenios_cancer.parquet":
+        "Convênios federais cujo objeto menciona câncer/oncologia (Portal da Transparência), cruzados por CNPJ com as instituições habilitadas no CNES. ",
+    "painel_oncologia.parquet":
+        "Painel de Oncologia (DATASUS): casos oncológicos do SUS desde 2013, com diagnóstico, estadiamento e primeiro tratamento. ",
+    "siasus_quimioterapia.parquet":
+        "SIASUS: APAC de quimioterapia do SUS desde 2008, com topografia, estadiamento, linfonodos, grau histopatológico e esquema terapêutico. ",
+    "siasus_radioterapia.parquet":
+        "SIASUS: APAC de radioterapia do SUS desde 2008, com topografia, estadiamento e finalidade (radical/adjuvante/paliativa). ",
+    "siasus_medicamentos_oncologicos.parquet":
+        "SIASUS: APAC de medicamentos de alto custo com CID principal de neoplasia (C00-D48), desde 2008. ",
+    "pns_2013_diagnostico_cancer.parquet":
+        "PNS 2013 (IBGE): pessoas com diagnóstico de câncer autorreferido, tipo (categórico), idade no diagnóstico e limitação. ",
+    "pns_2019_diagnostico_cancer.parquet":
+        "PNS 2019 (IBGE): pessoas com diagnóstico de câncer autorreferido, tipo em flags binárias (múltiplos) e limitação. ",
+    "pns_2013_rastreamento_colo_utero.parquet":
+        "PNS 2013 (IBGE): rastreamento de colo do útero (exame preventivo) nas mulheres entrevistadas, com resultado e histerectomia. ",
+    "pns_2019_rastreamento_colo_utero.parquet":
+        "PNS 2019 (IBGE): rastreamento de colo do útero, com motivo, tempo até resultado, encaminhamento e histerectomia. ",
+    "pns_2013_rastreamento_mama.parquet":
+        "PNS 2013 (IBGE): rastreamento de mama (exame clínico das mamas e mamografia) nas mulheres entrevistadas. ",
+    "pns_2019_rastreamento_mama.parquet":
+        "PNS 2019 (IBGE): rastreamento de mama (exame clínico das mamas e mamografia), com resultado e encaminhamento. ",
+    "cancer_populacional.parquet":
+        "INCA - Registro de Câncer de Base Populacional (RCBP): estimativas de incidência por população.",
+    "registro_hospitalar.parquet":
+        "INCA - Registro Hospitalar de Câncer (RHC): perfil de atendimento hospitalar por unidade.",
+}
 
 
-def _contar_registros(caminho) -> int | None:
-    try:
-        if caminho.suffix == ".parquet":
-            return pq.ParquetFile(caminho).metadata.num_rows
-        if caminho.suffix == ".csv":
-            with open(caminho, "r", encoding="utf-8-sig", errors="replace") as f:
-                return sum(1 for _ in f) - 1  # desconta o cabeçalho
-    except Exception as e:
-        print(f"[AVISO] Não foi possível contar registros de {caminho.name}: {e}")
-    return None
+def _e_arquivo_de_controle(nome: str) -> bool:
+    return (
+        nome == NOME_ARQUIVO_SAIDA
+        or nome == "_manifest.json"
+        or nome.startswith("_checkpoint_")
+    )
 
 
-def _info_arquivo(caminho, fonte_id, fonte_nome, descricao, tipo, url_origem, nota) -> dict:
-    existe = caminho.exists()
+def _fontes_por_pasta() -> dict[str, dict[str, str]]:
+    nomes = defaultdict(list)
+    descricoes = defaultdict(list)
+    for f in FONTES:
+        nomes[f.pasta_bucket].append(f.nome)
+        descricoes[f.pasta_bucket].append(f.descricao)
     return {
-        "arquivo": caminho.name,
-        "fonte_id": fonte_id,
-        "fonte_nome": fonte_nome,
-        "descricao": descricao,
-        "tipo": tipo,
-        "url_origem": url_origem,
-        "existe": existe,
-        "num_registros": _contar_registros(caminho) if existe else None,
-        "tamanho_bytes": caminho.stat().st_size if existe else None,
-        "data_modificacao": (
-            datetime.datetime.fromtimestamp(caminho.stat().st_mtime).strftime("%Y-%m-%d %H:%M:%S")
-            if existe else None
-        ),
-        "nota": nota,
+        pasta: {
+            "nomes": " | ".join(nomes[pasta]),
+            "descricoes": " | ".join(descricoes[pasta]),
+        }
+        for pasta in nomes
     }
 
 
-def main():
+def _montar_s3_filesystem() -> pafs.S3FileSystem:
+    endpoint = env.MINIO_ENDPOINT.replace("http://", "").replace("https://", "")
+    esquema = "https" if env.MINIO_ENDPOINT.startswith("https://") else "http"
+    return pafs.S3FileSystem(
+        endpoint_override=endpoint,
+        access_key=env.MINIO_ROOT_USER,
+        secret_key=env.MINIO_ROOT_PASSWORD,
+        scheme=esquema,
+    )
+
+
+def _metadados_parquet(s3_fs: pafs.S3FileSystem, bucket: str, key: str) -> tuple[int | None, int | None]:
+    try:
+        pf = pq.ParquetFile(f"{bucket}/{key}", filesystem=s3_fs)
+        return pf.metadata.num_rows, pf.metadata.num_columns
+    except Exception as e:
+        logger.warning(f"Não foi possível ler metadados de {key}: {e}")
+        return None, None
+
+
+def gerar_linhas(s3_client, s3_fs, bucket: str, infos: dict[str, dict[str, str]]) -> list[dict]:
+    paginator = s3_client.get_paginator("list_objects_v2")
     linhas = []
-    arquivos_cobertos_pelo_registro = set()
 
-    for fonte in FONTES:
-        for nome_arquivo in fonte.arquivos_saida:
-            caminho = RAW_DIR / nome_arquivo
-            arquivos_cobertos_pelo_registro.add(caminho.name)
-            linhas.append(_info_arquivo(
-                caminho, fonte.id, fonte.nome, fonte.descricao, fonte.tipo, fonte.url_origem, fonte.nota
-            ))
-
-    # Arquivos que existem em data/raw/ mas não estão em nenhuma Fonte
-    # do registro (ex: resumos/subprodutos derivados de mais de uma fonte)
-    if RAW_DIR.exists():
-        for caminho in sorted(RAW_DIR.glob("*")):
-            if not caminho.is_file():
+    for pagina in paginator.paginate(Bucket=bucket):
+        for obj in pagina.get("Contents", []):
+            key = obj["Key"]
+            nome_arquivo = key.rsplit("/", 1)[-1]
+            if _e_arquivo_de_controle(nome_arquivo):
                 continue
-            if caminho.name in arquivos_cobertos_pelo_registro or caminho.name == ARQUIVO_SAIDA.name:
-                continue
-            linhas.append(_info_arquivo(
-                caminho, fonte_id="(derivado)", fonte_nome="Arquivo derivado/subproduto",
-                descricao="Não mapeado 1:1 a uma única Fonte do registro (ex: resumo agregando múltiplas fontes).",
-                tipo="derivado", url_origem="", nota="",
-            ))
 
-    df = pd.DataFrame(linhas)
+            pasta = key.split("/")[0] if "/" in key else ""
 
-    faltando = df[~df["existe"]]
-    if not faltando.empty:
-        print(f"[AVISO] {len(faltando)} arquivo(s) esperado(s) pelo registro mas NÃO encontrado(s) em data/raw/:")
-        for _, r in faltando.iterrows():
-            print(f"  - {r['arquivo']} (fonte: {r['fonte_id']})")
+            num_registros = num_colunas = None
+            if key.endswith(".parquet"):
+                num_registros, num_colunas = _metadados_parquet(s3_fs, bucket, key)
 
-    ARQUIVO_SAIDA.parent.mkdir(parents=True, exist_ok=True)
-    df.to_csv(ARQUIVO_SAIDA, index=False, encoding="utf-8-sig")
-    
-    ARQUIVO_SAIDA_COPIA.parent.mkdir(parents=True, exist_ok=True)
-    df.to_csv(ARQUIVO_SAIDA_COPIA, index=False, encoding="utf-8-sig")
+            info_pasta = infos.get(pasta, {"nomes": "(não mapeado em fontes.py)", "descricoes": ""})
 
-    print(f"✔ Metadados salvos em {ARQUIVO_SAIDA} ({len(df)} linha(s), {len(faltando)} faltando).")
-    print(f"✔ Cópia salva em {ARQUIVO_SAIDA_COPIA}")
+            descricao = DESCRICOES_POR_ARQUIVO.get(nome_arquivo, info_pasta["descricoes"])
+            
+            # --- NOVA LÓGICA ---
+            # Busca no dicionário específico. Se não existir, extrai apenas o 
+            # primeiro nome da fonte para não jogar "um monte" de nomes no CSV.
+            nome_fonte = NOMES_POR_ARQUIVO.get(nome_arquivo, info_pasta["nomes"].split(" | ")[0])
+
+            linhas.append({
+                "ARQUIVO": nome_arquivo,
+                "DIRETORIO": pasta,
+                "FONTE_RELACIONADA": nome_fonte,
+                "DESCRICAO": descricao,
+                "NUM_REGISTROS": num_registros,
+                "NUM_COLUNAS": num_colunas,
+                "TAMANHO_BYTES": obj["Size"],
+                "ULTIMA_ATUALIZACAO": obj["LastModified"].astimezone(ZoneInfo("America/Sao_Paulo")).strftime("%d-%m-%Y %H:%M:%S"),
+            })
+
+    linhas.sort(key=lambda r: r["DIRETORIO"])
+    return linhas
+
+
+def _escrever_csv(caminho, linhas):
+    caminho.parent.mkdir(parents=True, exist_ok=True)
+    with open(caminho, "w", newline="", encoding="utf-8-sig") as f:
+        writer = csv.DictWriter(f, fieldnames=COLUNAS)
+        writer.writeheader()
+        writer.writerows(linhas)
+
+
+def main() -> int:
+    faltando = env.validar_minio()
+    if faltando:
+        logger.error(f"Variáveis do MinIO ausentes: {', '.join(faltando)}")
+        return exit_codes.ERRO
+
+    nomes = _fontes_por_pasta()
+    s3_client = get_s3_client()
+    s3_fs = _montar_s3_filesystem()
+
+    logger.info(f"Catalogando {env.MINIO_BUCKET}...")
+    linhas = gerar_linhas(s3_client, s3_fs, env.MINIO_BUCKET, nomes)
+
+    if not linhas:
+        logger.warning("Nenhum arquivo encontrado no bucket.")
+        return exit_codes.SEM_NOVIDADE
+
+    _escrever_csv(CAMINHO_DOCS, linhas)
+
+    s3_client.upload_file(str(CAMINHO_DOCS), env.MINIO_BUCKET, NOME_ARQUIVO_SAIDA)
+
+    nao_mapeadas = sorted({
+        l["DIRETORIO"] for l in linhas
+        if l["FONTE_RELACIONADA"].startswith("(não mapeado") # <--- Alterado aqui
+    })
+    if nao_mapeadas:
+        logger.warning(f"Pasta(s) sem Fonte em fontes.py: {nao_mapeadas}")
+
+    sem_metadados = [l["ARQUIVO"] for l in linhas
+                     if l["ARQUIVO"].endswith(".parquet") and l["NUM_REGISTROS"] is None]
+    if sem_metadados:
+        logger.warning(f"Parquet(s) sem metadados legíveis: {sem_metadados}")
+
+    total = sum(l["NUM_REGISTROS"] or 0 for l in linhas)
+    logger.info(
+        f"{NOME_ARQUIVO_SAIDA} publicado na raiz do bucket: "
+        f"{len(linhas)} arquivo(s), {total:,} registro(s) no total.".replace(",", ".")
+    )
+    return exit_codes.SUCESSO
+
+
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

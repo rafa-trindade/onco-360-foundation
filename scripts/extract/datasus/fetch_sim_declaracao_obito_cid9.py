@@ -1,17 +1,15 @@
-"""
-SIM - Declaração de Óbito (DATASUS) - Dados Consolidados, CID-9 (1979-1995)
+"""Extração FTP DATASUS: SIM / Declaração de Óbito CID-9 (1979-1995).
 
-Baixa os arquivos .dbc do FTP público do DATASUS, prefixo DORBR (ex:
-DORBR95.dbc) -- diferente do prefixo DOBR usado na era CID-10 (ex:
-DOBR1996.dbc). A era CID-9 do SIM tem nomes de arquivo com ano de 2 OU 4
-dígitos dependendo do ano -- a regra abaixo lida com os dois formatos.
+Regra de negócio: Arquivos da era CID-9 usam o prefixo 'DORBR' (divergente do 'DOBR' do CID-10).
+Parser tolerante: A regra de extração lida com a inconsistência histórica da nomenclatura, suportando anos com 2 ou 4 dígitos.
 """
-from scripts.extract.datasus.base_ftp import sincronizar_ftp
+from scripts.extract.datasus.common.base_ftp import sincronizar_ftp
 from scripts.common.paths import LANDING_DIR
 from scripts.common import exit_codes
 
 FTP_DIR = "/dissemin/publicos/SIM/CID9/DORES"
 OUTPUT_DIR = str(LANDING_DIR / "dbc_sim_declaracao_obito_cid9")
+PASTA_BUCKET = "datasus_sim"
 
 ANO_MINIMO = 1979
 ANO_MAXIMO = 1995
@@ -36,7 +34,7 @@ def regra_dobr_cid9(nome_arquivo: str) -> bool:
     return ANO_MINIMO <= ano_completo <= ANO_MAXIMO
 
 if __name__ == "__main__":
-    sucesso, novidade = sincronizar_ftp(FTP_DIR, OUTPUT_DIR, regra_dobr_cid9)
+    sucesso, novidade = sincronizar_ftp(FTP_DIR, OUTPUT_DIR, regra_dobr_cid9, pasta_bucket=PASTA_BUCKET)
 
     if not sucesso:
         exit(exit_codes.ERRO)

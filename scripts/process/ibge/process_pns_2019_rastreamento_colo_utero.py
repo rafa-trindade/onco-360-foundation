@@ -1,23 +1,23 @@
+"""PNS 2019 - Rastreamento de Câncer de Colo do Útero (process).
+
+Comportamento preventivo (exame preventivo / Papanicolau) das mulheres
+entrevistadas. Em 2019 há campos adicionais: motivo de não ter feito, tempo
+até o resultado e encaminhamento. Filtra mulheres com resposta no bloco.
+Posições confirmadas contra o dicionário oficial PNS 2019.
 """
-PNS 2019 - Rastreamento de Câncer de Colo do Útero (process)
+import sys
 
-Bloco mais rico que 2013: além de quando foi o último exame, traz o
-motivo de NÃO ter feito, quanto tempo até receber o resultado, e se
-houve encaminhamento após o resultado -- acompanha o desfecho, não só
-a realização do exame.
-
-Posições confirmadas contra dicionario_PNS_microdados_2019.xls.
-
-Saída: data/raw/raw_pns_2019_rastreamento_colo_utero.parquet
-"""
 import pandas as pd
-from scripts.common.paths import RAW_DIR
-from scripts.process.ibge.pns_base import PNS_LANDING_DIR, extrair, decodificar, logger
 
-ARQUIVO_ENTRADA = PNS_LANDING_DIR / "PNS_2019.txt"
-ARQUIVO_SAIDA = RAW_DIR / "raw_pns_2019_rastreamento_colo_utero.parquet"
+from scripts.process.ibge.common.pns_base import (
+    PNS_MANUAL_DIR, extrair, decodificar, finalizar_e_publicar, logger,
+)
+from scripts.common import exit_codes
 
-MAPA_SEXO = {"1": "Homem", "2": "Mulher"}
+ARQUIVO_ENTRADA = PNS_MANUAL_DIR / "PNS_2019.txt"
+NOME_ARQUIVO_FINAL = "pns_2019_rastreamento_colo_utero.parquet"
+
+MAPA_SEXO = {"1": "Masculino", "2": "Feminino"}
 MAPA_ULTIMO_EXAME = {
     "1": "Há menos de 1 ano", "2": "De 1 a menos de 2 anos",
     "3": "De 2 a menos de 3 anos", "4": "Há 3 anos ou mais",
@@ -44,9 +44,16 @@ MAPA_TEMPO_RESULTADO = {
 }
 MAPA_ENCAMINHAMENTO = {
     "1": "Sim", "2": "Não",
-    "3": "Não houve encaminhamento -- consultas já eram com especialista",
+    "3": "Não houve encaminhamento, consultas já eram com especialista",
     "9": "Ignorado",
 }
+
+MAPA_MOTIVO_HISTERECTOMIA = {
+    "1": "Mioma uterino", "2": "Prolapso do útero", "3": "Endometriose",
+    "4": "Câncer ginecológico", "5": "Complicações da gravidez ou parto",
+    "6": "Sangramento vaginal anormal", "7": "Outro", "9": "Ignorado",
+}
+MAPA_SIM_NAO_SIMPLES = {"1": "Sim", "2": "Não", "9": "Ignorado"}
 
 CAMPOS = [
     ("UF", 1, 2),
@@ -63,37 +70,41 @@ CAMPOS = [
     ("FEITO_PELO_SUS", 1068, 1),
     ("TEMPO_ATE_RESULTADO", 1069, 1),
     ("ENCAMINHAMENTO_APOS_RESULTADO", 1070, 1),
+    ("FEZ_HISTERECTOMIA", 1074, 1),
+    ("MOTIVO_HISTERECTOMIA", 1075, 1),
+    ("IDADE_HISTERECTOMIA", 1076, 2),
+]
+
+ORDEM = [
+    "ULTIMO_EXAME_PREVENTIVO", "MOTIVO_NAO_FEZ", "FEITO_PELO_SUS", "PAGOU_EXAME",
+    "TEMPO_ATE_RESULTADO", "ENCAMINHAMENTO_APOS_RESULTADO",
+    "FEZ_HISTERECTOMIA", "MOTIVO_HISTERECTOMIA", "IDADE_HISTERECTOMIA",
+    "SEXO", "IDADE", "COR_RACA", "COD_UF",
+    "ESTRATO_AMOSTRAL", "UNIDADE_PRIMARIA_AMOSTRAGEM", "NUM_ORDEM_DOMICILIO",
+    "NUM_ORDEM_MORADOR",
 ]
 
 
-def main():
+def main() -> int:
     if not ARQUIVO_ENTRADA.exists():
         logger.error(f"Arquivo não encontrado: {ARQUIVO_ENTRADA}")
-        return
+        return exit_codes.ERRO
 
-    logger.info("Iniciando leitura dos microdados PNS 2019 (rastreamento colo do útero)...")
+    logger.info("Lendo microdados PNS 2019 (rastreamento colo do útero)...")
     registros = []
-
     with open(ARQUIVO_ENTRADA, "r", encoding="utf-8", errors="replace") as f:
         for i, linha in enumerate(f, 1):
             if i % 50_000 == 0:
                 logger.info(f"{i} linhas lidas...")
-
-            sexo = extrair(linha, 108, 1)
-            if sexo != "2":
+            if extrair(linha, 108, 1) != "2":  # só mulheres
                 continue
-
-            resposta_exame = extrair(linha, 1064, 1)
-            if not resposta_exame:
+            if not extrair(linha, 1064, 1):  # sem resposta no bloco
                 continue
+            registros.append({nome: extrair(linha, pos, tam) for nome, pos, tam in CAMPOS})
 
-            registro = {nome: extrair(linha, pos, tam) for nome, pos, tam in CAMPOS}
-            registros.append(registro)
-
-    logger.info("Convertendo para DataFrame...")
     df = pd.DataFrame(registros)
+    logger.info(f"{len(df)} mulher(es) no recorte de rastreamento.")
 
-    logger.info("Decodificando categorias...")
     df["SEXO"] = df["SEXO"].apply(lambda v: decodificar(v, MAPA_SEXO))
     df["ULTIMO_EXAME_PREVENTIVO"] = df["ULTIMO_EXAME_PREVENTIVO"].apply(lambda v: decodificar(v, MAPA_ULTIMO_EXAME))
     df["MOTIVO_NAO_FEZ"] = df["MOTIVO_NAO_FEZ"].apply(lambda v: decodificar(v, MAPA_MOTIVO_NAO_FEZ))
@@ -101,12 +112,11 @@ def main():
     df["FEITO_PELO_SUS"] = df["FEITO_PELO_SUS"].apply(lambda v: decodificar(v, MAPA_SIM_NAO_NSABE))
     df["TEMPO_ATE_RESULTADO"] = df["TEMPO_ATE_RESULTADO"].apply(lambda v: decodificar(v, MAPA_TEMPO_RESULTADO))
     df["ENCAMINHAMENTO_APOS_RESULTADO"] = df["ENCAMINHAMENTO_APOS_RESULTADO"].apply(lambda v: decodificar(v, MAPA_ENCAMINHAMENTO))
+    df["FEZ_HISTERECTOMIA"] = df["FEZ_HISTERECTOMIA"].apply(lambda v: decodificar(v, MAPA_SIM_NAO_SIMPLES))
+    df["MOTIVO_HISTERECTOMIA"] = df["MOTIVO_HISTERECTOMIA"].apply(lambda v: decodificar(v, MAPA_MOTIVO_HISTERECTOMIA))
 
-    logger.info(f"Total de mulheres no recorte de rastreamento: {len(df)}")
+    return finalizar_e_publicar(df, NOME_ARQUIVO_FINAL, ORDEM)
 
-    ARQUIVO_SAIDA.parent.mkdir(parents=True, exist_ok=True)
-    df.to_parquet(ARQUIVO_SAIDA, index=False)
-    logger.info(f"✔ Arquivo salvo em: {ARQUIVO_SAIDA}")
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

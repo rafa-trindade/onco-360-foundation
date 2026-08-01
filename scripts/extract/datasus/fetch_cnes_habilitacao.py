@@ -1,21 +1,11 @@
-"""
-CNES - Habilitações (retrato mais recente, todas as UFs)
+"""Extração FTP CNES: Habilitações (Retrato atual).
 
-Baixa, via FTP do DATASUS, os arquivos de Habilitações do CNES -- usado
-pra identificar quais estabelecimentos têm habilitação em Alta
-Complexidade em Oncologia (ver habilitacoes_oncologia.py pros códigos
-e a classificação adulto/pediátrico).
-
-Diferente da maioria das fontes deste projeto, este diretório FTP é
-organizado por UF + competência (mês/ano), com histórico desde 2005 --
-um arquivo por UF por mês (~6 mil arquivos no total). Como o objetivo
-é o retrato ATUAL de quem tem habilitação (não a evolução histórica),
-este script lista tudo primeiro, acha a competência mais recente
-disponível, e baixa só os arquivos dessa competência (27 UFs).
+Regra de negócio: Mapeia estabelecimentos com habilitação em Alta Complexidade em Oncologia.
+Otimização de rede: O diretório FTP particiona por UF/Mês com histórico longo (>6k arquivos). A extração identifica dinamicamente a competência mais recente e restringe o download a este corte transversal (27 UFs), descartando a série histórica.
 """
 import re
 import socket
-from scripts.extract.datasus.base_ftp import FTPPasvFix, FTP_HOST, baixar_arquivo, ensure_output_dir
+from scripts.extract.datasus.common.base_ftp import FTPPasvFix, FTP_HOST, baixar_arquivo, ensure_output_dir
 from scripts.common.paths import LANDING_DIR
 from scripts.common import exit_codes
 

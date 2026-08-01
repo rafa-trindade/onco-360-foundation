@@ -1,40 +1,37 @@
+"""Extração FTP DATASUS: SIM / Declaração de Óbito Preliminar (CID-10).
+
+Regra de negócio: Sincroniza arquivos não homologados do diretório PRELIM. Vazio entre ciclos de publicação é um estado esperado e tratado como `SEM_NOVIDADE`.
 """
-SIM - Óbitos por Câncer, CID-10 Preliminar (process)
+from datetime import datetime
 
-Mesmo filtro do consolidado. Pode legitimamente ficar vazio entre
-ciclos de publicação do DATASUS -- nesse caso escreve só o Parquet
-vazio (schema padrão); o resumo anual não é tocado (não tem ano pra
-registrar quando não há nenhum arquivo).
+from scripts.extract.datasus.common.base_ftp import sincronizar_ftp
+from scripts.common.paths import LANDING_DIR
+from scripts.common import exit_codes
 
-Saídas:
-  data/raw/raw_sim_obitos_cancer_prelim.parquet
-  data/raw/raw_sim_obitos_cancer_resumo_anual.csv (upsert -- só quando há dado)
-"""
-from scripts.common.paths import LANDING_DIR, RAW_DIR
-from scripts.process.datasus.base_process_dbc import processar_diretorio_dbc_filtrado
-from scripts.process.datasus.common.filtros_cancer import filtro_cancer_cid10
-from scripts.process.datasus.common.colunas_sim import COLUNAS_DECLARACAO_OBITO
-from scripts.process.datasus.common.resumo_cancer import atualizar_resumo_anual, extrair_ano_cid10
-from scripts.process.datasus.common.normalizar_municipio import adicionar_municipio_normalizado
+FTP_DIR = "/dissemin/publicos/SIM/PRELIM/DORES"
+OUTPUT_DIR = str(LANDING_DIR / "dbc_sim_declaracao_obito_prelim")
+PASTA_BUCKET = "datasus_sim"
 
-def main():
-    dbc_dir = LANDING_DIR / "dbc_sim_declaracao_obito_prelim"
-    parquet_final = RAW_DIR / "raw_sim_obitos_cancer_prelim.parquet"
-    resumo_csv = RAW_DIR / "raw_sim_obitos_cancer_resumo_anual.csv"
+ANO_MINIMO = 1996
 
-    def callback(detalhe):
-        atualizar_resumo_anual([detalhe], "PRELIM", extrair_ano_cid10, resumo_csv)
 
-    houve_dado, detalhes = processar_diretorio_dbc_filtrado(
-        dbc_dir, parquet_final, filtro_cancer_cid10,
-        colunas_padrao=COLUNAS_DECLARACAO_OBITO, callback_arquivo=callback
-    )
+def regra_dobr(nome_arquivo: str) -> bool:
+    nome = nome_arquivo.upper()
+    if not (nome.startswith("DOBR") and nome.endswith(".DBC")):
+        return False
+    ano_str = nome[4:8]
+    if not ano_str.isdigit():
+        return False
+    return ANO_MINIMO <= int(ano_str) <= datetime.now().year
 
-    if not detalhes:
-        print("[INFO] Nenhum .dbc no preliminar agora -- resumo anual não alterado.")
-
-    if houve_dado:
-        adicionar_municipio_normalizado(parquet_final)
 
 if __name__ == "__main__":
-    main()
+    sucesso, novidade = sincronizar_ftp(FTP_DIR, OUTPUT_DIR, regra_dobr, pasta_bucket=PASTA_BUCKET)
+
+    if not sucesso:
+        exit(exit_codes.ERRO)
+    elif not novidade:
+        print("[INFO] Nenhum arquivo preliminar novo desde a última execução.")
+        exit(exit_codes.SEM_NOVIDADE)
+    else:
+        exit(exit_codes.SUCESSO)

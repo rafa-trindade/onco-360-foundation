@@ -1,19 +1,20 @@
-"""
-CNES - Cadastro Nacional de Estabelecimentos de Saúde
+"""Extração HTTP/ZIP CNES (Cadastro Nacional de Estabelecimentos de Saúde).
 
-Baixa o CSV completo de estabelecimentos de saúde cadastrados no CNES,
-publicado no Portal de Dados Abertos do Ministério da Saúde.
+Idempotência: Validação de novidade baseada em hash de conteúdo contra o manifesto persistido no bucket.
 """
-from scripts.extract.dados_abertos.base_dados_abertos import LANDING_DIR, baixar_e_extrair_csv
+from scripts.extract.dados_abertos.common.base_dados_abertos import LANDING_DIR, sincronizar_csv_zip
 from scripts.common import exit_codes
 
-CSV_DIR = LANDING_DIR / "cnes"
+URL = "https://s3.sa-east-1.amazonaws.com/ckan.saude.gov.br/CNES/cnes_estabelecimentos_csv.zip"
+PASTA_BUCKET = "cnes"
+CHAVE_FONTE = "cnes_estabelecimentos_csv.zip"
+CSV_LANDING = LANDING_DIR / "cnes" / "cnes_estabelecimentos_raw.csv"
+
 
 def main() -> bool:
-    url = "https://s3.sa-east-1.amazonaws.com/ckan.saude.gov.br/CNES/cnes_estabelecimentos_csv.zip"
-    landing_file = CSV_DIR / "cnes_estabelecimentos_raw.csv"
+    novidade, _ = sincronizar_csv_zip(URL, CSV_LANDING, PASTA_BUCKET, CHAVE_FONTE)
+    return novidade
 
-    return baixar_e_extrair_csv(url, landing_file)
 
 if __name__ == "__main__":
     novidade = main()

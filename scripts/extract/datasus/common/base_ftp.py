@@ -1,10 +1,13 @@
 import os
+import re
 import socket
 import time
 import random
 import logging
 from ftplib import FTP, error_perm
 from typing import Callable
+
+from scripts.common.bucket_sync import carregar_manifesto
 
 logging.basicConfig(
     level=logging.INFO,
@@ -16,24 +19,32 @@ FTP_HOST = "ftp.datasus.gov.br"
 MAX_RETRIES = 10
 RETRY_DELAY = 5
 
+# SOCKS5 opcional: contorna bloqueio de porta 21 (comum em VPS/cloud) via túnel SSH.
+SOCKS5_PROXY_ENABLED = os.environ.get("SOCKS5_PROXY_ENABLED", "false").lower() in ("1", "true", "yes")
+SOCKS5_PROXY_HOST = os.environ.get("SOCKS5_PROXY_HOST", "127.0.0.1")
+SOCKS5_PROXY_PORT = int(os.environ.get("SOCKS5_PROXY_PORT", "1080"))
+
+if SOCKS5_PROXY_ENABLED:
+    import socks
+    socks.set_default_proxy(socks.SOCKS5, SOCKS5_PROXY_HOST, SOCKS5_PROXY_PORT)
+    socket.socket = socks.socksocket
+    logger.info(f"[SOCKS5] Roteamento reverso ativado ({SOCKS5_PROXY_HOST}:{SOCKS5_PROXY_PORT}).")
+
 
 class FTPPasvFix(FTP):
-    """
-    FTP com correção de PASV: ignora o IP devolvido pelo servidor na
-    resposta 227 (comum estar "errado"/interno quando o servidor está
-    atrás de load balancer/NAT) e conecta sempre no mesmo host já usado
-    na conexão de controle, usando só a porta sugerida.
-    """
+    """Workaround de infraestrutura: ignora IP da resposta 227 (frequentemente errado atrás de NAT/Load Balancers) 
+    e injeta o host da conexão de controle."""
     def makepasv(self):
         host, port = super().makepasv()
         host_real = self.sock.getpeername()[0]
         if host != host_real:
-            logger.warning(f"[PASV] Servidor devolveu IP {host}, usando {host_real} (conexão de controle) em vez disso.")
+            logger.warning(f"[PASV] Servidor devolveu IP {host}, usando {host_real} em vez disso.")
         return host_real, port
 
 
 def ensure_output_dir(path: str):
     os.makedirs(path, exist_ok=True)
+
 
 def get_tamanho_ftp(ftp: FTP, nome_arquivo: str) -> int | None:
     try:
@@ -41,13 +52,42 @@ def get_tamanho_ftp(ftp: FTP, nome_arquivo: str) -> int | None:
     except error_perm:
         return None
 
+
 def _backoff(attempt: int):
     espera = min(RETRY_DELAY * (2 ** attempt), 120) + random.uniform(0, 3)
     logger.info(f"Aguardando {espera:.1f}s antes de tentar de novo...")
     time.sleep(espera)
 
-def baixar_arquivo(ftp_dir: str, nome_arquivo: str, pasta_saida: str) -> tuple[bool, bool]:
-    """Retorna (sucesso, houve_novidade)."""
+
+def _chave_recencia(nome_arquivo: str) -> str:
+    """Extrai ano para ordenação temporal, tratando a virada do milênio (>=90 -> 19xx) 
+    no padrão de arquivos do DATASUS."""
+    m = re.search(r"(\d+)\.\w+$", nome_arquivo, re.IGNORECASE)
+    if not m:
+        return nome_arquivo
+
+    digitos = m.group(1)
+    if len(digitos) == 2:
+        ano = int(digitos)
+        return str(1900 + ano) if ano >= 90 else str(2000 + ano)
+    return digitos
+
+
+def _deduplicar_case(nomes: list[str]) -> list[str]:
+    vistos = set()
+    resultado = []
+    for nome in nomes:
+        chave = nome.upper()
+        if chave in vistos:
+            continue
+        vistos.add(chave)
+        resultado.append(nome)
+    return resultado
+
+
+def baixar_arquivo(ftp_dir: str, nome_arquivo: str, pasta_saida: str,
+                    manifesto: dict[str, int] | None = None) -> tuple[bool, bool]:
+
     local_path = os.path.join(pasta_saida, nome_arquivo)
     tamanho_ftp = None
 
@@ -69,6 +109,10 @@ def baixar_arquivo(ftp_dir: str, nome_arquivo: str, pasta_saida: str) -> tuple[b
                         _backoff(attempt)
                         continue
                     return False, False
+
+                if manifesto is not None and manifesto.get(nome_arquivo.upper()) == tamanho_ftp:
+                    print(f"[SKIP-MANIFESTO] {nome_arquivo} já incorporado ao último output publicado.")
+                    return True, False
 
                 tamanho_local = os.path.getsize(local_path) if os.path.exists(local_path) else 0
 
@@ -105,11 +149,18 @@ def baixar_arquivo(ftp_dir: str, nome_arquivo: str, pasta_saida: str) -> tuple[b
                 return False, False
     return False, False
 
-def sincronizar_ftp(ftp_dir: str, output_dir: str, regra_filtro: Callable[[str], bool]) -> tuple[bool, bool]:
-    """Retorna (sucesso, houve_novidade)."""
+
+def sincronizar_ftp(ftp_dir: str, output_dir: str, regra_filtro: Callable[[str], bool],
+                     pasta_bucket: str | None = None,
+                     verificar_ultimas_n_competencias: int = 2) -> tuple[bool, bool]:
+    """Otimização de rede: O DATASUS revisa apenas envios recentes. 
+    Limitar `verificar_ultimas_n_competencias` evita dezenas de conexões FTP inúteis para arquivos consolidados no manifesto.
+    """
     ensure_output_dir(output_dir)
     logger.info(f"Conectando a {FTP_HOST} ({ftp_dir}) para listar arquivos...")
     relevantes = []
+
+    manifesto = carregar_manifesto(pasta_bucket) if pasta_bucket else None
 
     for attempt in range(MAX_RETRIES):
         try:
@@ -127,7 +178,12 @@ def sincronizar_ftp(ftp_dir: str, output_dir: str, regra_filtro: Callable[[str],
                     print("Nenhum arquivo encontrado no diretório.")
                     return True, False
 
-                relevantes = [arq for arq in arquivos if regra_filtro(arq)]
+                relevantes_brutos = [arq for arq in arquivos if regra_filtro(arq)]
+                relevantes = _deduplicar_case(relevantes_brutos)
+                duplicatas = len(relevantes_brutos) - len(relevantes)
+                if duplicatas:
+                    print(f"[AVISO] {duplicatas} duplicata(s) por maiúscula/minúscula removida(s).")
+
                 print(f"Sucesso ao listar! {len(relevantes)} arquivos passaram no filtro.")
                 break
 
@@ -138,10 +194,28 @@ def sincronizar_ftp(ftp_dir: str, output_dir: str, regra_filtro: Callable[[str],
                 return False, False
             _backoff(attempt)
 
+    if manifesto is not None and relevantes:
+        competencias = sorted(set(_chave_recencia(a) for a in relevantes))
+        recentes = set(competencias[-verificar_ultimas_n_competencias:])
+
+        a_verificar = []
+        pulados = 0
+        for arq in relevantes:
+            if _chave_recencia(arq) in recentes or arq.upper() not in manifesto:
+                a_verificar.append(arq)
+            else:
+                pulados += 1
+
+        if pulados:
+            print(f"[OTIMIZAÇÃO] {pulados} arquivo(s) de competência antiga já no manifesto -- "
+                  f"pulando verificação de rede (só as {verificar_ultimas_n_competencias} "
+                  f"competências mais recentes + novos são checados).")
+        relevantes = a_verificar
+
     sucesso_geral = True
     houve_novidade = False
     for arq in relevantes:
-        sucesso, novidade = baixar_arquivo(ftp_dir, arq, output_dir)
+        sucesso, novidade = baixar_arquivo(ftp_dir, arq, output_dir, manifesto=manifesto)
         sucesso_geral = sucesso_geral and sucesso
         houve_novidade = houve_novidade or novidade
 

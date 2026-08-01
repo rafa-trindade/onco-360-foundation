@@ -1,18 +1,29 @@
+"""Painel de Oncologia (DATASUS) - process.
+
+Procedimentos oncológicos do SUS desde 2013 (diagnóstico, estadiamento,
+tratamento). Uma linha por registro. Converte os .dbc da landing, decodifica
+os códigos (tratamento, categoria de diagnóstico, estadiamento, sexo, e a
+topografia CID-10 com descrição), e publica no bucket (painel_oncologia/),
+padrão do projeto. Sem filtro: o painel já é inteiramente oncológico.
 """
-Painel de Oncologia (DATASUS) (process)
+import sys
 
-Converte os .dbc baixados pelo extract em um único Parquet final, plano,
-em data/raw/raw_painel_de_oncologia.parquet -- mesmo nome já publicado em
-kaggle.com/datasets/rafatrindade/onco-360.
-"""
-from scripts.process.datasus.base_process_dbc import processar_diretorio_dbc
-from scripts.common.paths import LANDING_DIR, RAW_DIR
+from scripts.common import exit_codes
+from scripts.common.paths import LANDING_DIR
+from scripts.process.datasus.common.base_process_dbc_stream import processar_fonte_ftp_incremental
+from scripts.process.datasus.common.po.transformar_painel import montar_query_painel
 
-def main():
-    dbc_dir = LANDING_DIR / "dbc_painel_oncologia"
-    parquet_final = RAW_DIR / "raw_painel_de_oncologia.parquet"
+PASTA_BUCKET = "datasus_po"
+NOME_ARQUIVO_FINAL = "painel_oncologia.parquet"
+DBC_DIR = LANDING_DIR / "dbc_painel_oncologia"
 
-    processar_diretorio_dbc(dbc_dir, parquet_final)
+
+def main() -> int:
+    return processar_fonte_ftp_incremental(
+        DBC_DIR, PASTA_BUCKET, NOME_ARQUIVO_FINAL,
+        query_transformacao=lambda cols: montar_query_painel(cols),
+    )
+
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

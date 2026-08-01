@@ -6,12 +6,6 @@ Classificação e Formulário de Verificação dos Critérios Mínimos para
 Habilitação na Alta Complexidade em Oncologia no SUS), que consolida e
 atualiza os códigos originalmente definidos nas Portarias SAS/MS
 146/2008, 62/2009 e 102/2012.
-
-*** ATENÇÃO -- VALIDAÇÃO PENDENTE ***
-O formato exato de armazenamento do código no campo CO_HABILITACAO do
-.dbc (com ou sem ponto, com ou sem zeros à esquerda, ex: "1706" vs
-"17.06" vs "0001706") ainda não foi confirmado contra um arquivo real
--- confirmar assim que o primeiro HB*.dbc for baixado e processado.
 """
 
 # Cada código de habilitação em oncologia -> se é pediátrico ou não.
@@ -37,7 +31,7 @@ def eh_habilitacao_oncologia(codigo: str) -> bool:
     """Aceita o código em qualquer formato razoável (com/sem ponto, com/sem
     zeros à esquerda) e verifica se é uma habilitação de oncologia."""
     normalizado = str(codigo).strip().replace(".", "").lstrip("0")
-    normalizado = normalizado.zfill(4)  # garante 4 dígitos (ex: "706" -> "0706"... ajustado abaixo)
+    normalizado = normalizado.zfill(4) 
     # Códigos reais são 17XX -- normaliza removendo zeros à esquerda e
     # comparando só os 4 dígitos finais relevantes
     candidatos = {str(codigo).strip(), str(codigo).strip().replace(".", "")}

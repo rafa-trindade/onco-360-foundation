@@ -1,28 +1,7 @@
-"""
-Portal da Transparência - Convênios (via Dados Abertos / download-de-dados)
+"""Extração Portal da Transparência: Convênios (Dados Abertos).
 
-Baixa o arquivo acumulado de Convênios via o mecanismo de "Dados
-Abertos" do Portal da Transparência -- diferente da API
-(api.portaldatransparencia.gov.br, que exige chave/2FA), este caminho é
-público: sem autenticação, sem chave, sem login.
-
-URL: https://portaldatransparencia.gov.br/download-de-dados/convenios/{AAAAMMDD}
-
-A data no final do endereço é a "data de referência" da extração (o
-portal atualiza semanalmente) -- NÃO representa um período específico
-de convênios. Confirmado na página oficial de perguntas frequentes do
-Portal ("Convênios e Outros Acordos"): "Os dados apresentados são o
-acumulado desde 1996." Cada data é um retrato de TUDO desde 1996 até
-aquele momento -- não precisamos baixar várias datas e somar, só a
-mais recente já é o histórico completo.
-
-Como a página só mostra a data mais recente via JavaScript, o script
-tenta a data de hoje e vai voltando dia a dia até achar a mais recente
-que responder com um arquivo de verdade.
-
-O .zip baixado contém 2 CSVs (Convenios e Convenios_OrdensBancarias) --
-igual ao resto do projeto, o extract descompacta e entrega o formato
-final (CSV) direto na Landing; nunca deixa um .zip cru salvo.
+Mecanismo de busca: Polling reverso (D-0 a D-30) para localizar o dump semanal público mais recente.
+Regra de negócio: Cada snapshot contém o histórico integral acumulado (desde 1996), dispensando paginação ou merge temporal. O ZIP é descompactado em memória e os CSVs expostos diretamente na Landing.
 """
 import time
 import hashlib
@@ -43,25 +22,16 @@ MAX_DIAS_TENTATIVA = 30  # atualização é semanal; 30 dias dá margem de sobra
 
 
 def _nome_padronizado(nome_interno: str) -> str:
-    """
-    Remove o prefixo de data (ex: '20260703_') do nome do arquivo de
-    dentro do zip. O nome final salvo na Landing precisa ser ESTÁVEL
-    entre execuções -- sempre "Convenios.csv", nunca
-    "20260710_Convenios.csv" -- senão cada atualização semanal cria um
-    arquivo NOVO em vez de substituir o anterior (o conteúdo já é o
-    acumulado inteiro desde 1996, não um recorte da semana -- guardar
-    um snapshot por semana seria só duplicação sem propósito).
-    """
+    """Padronização de saída: Remove prefixo temporal do CSV extraído para garantir estabilidade do nome na Landing e permitir overwrite idempotente."""
     nome_base = Path(nome_interno).name
     return re.sub(r"^\d{8}_", "", nome_base)
 
 
 def _parece_arquivo_valido(resp: requests.Response) -> bool:
-    """Distingue uma resposta com arquivo de verdade de uma página de
-    erro/vazia -- checa tamanho mínimo e que não é HTML."""
+    """Validação de payload: Rejeita soft 404s (páginas HTML de erro) e payloads subdimensionados."""
     if resp.status_code != 200:
         return False
-    if len(resp.content) < 10_000:  # arquivo real tem 1996-hoje, não cabe em poucos KB
+    if len(resp.content) < 10_000: 
         return False
     content_type = resp.headers.get("Content-Type", "").lower()
     if "text/html" in content_type:
@@ -70,8 +40,7 @@ def _parece_arquivo_valido(resp: requests.Response) -> bool:
 
 
 def achar_e_baixar_mais_recente() -> tuple[str, bytes] | None:
-    """Tenta a partir de hoje, voltando dia a dia, até achar uma data
-    cuja extração exista de verdade. Retorna (data_str, conteudo_zip) ou None."""
+
     hoje = datetime.now()
 
     for i in range(MAX_DIAS_TENTATIVA):
@@ -97,8 +66,7 @@ def achar_e_baixar_mais_recente() -> tuple[str, bytes] | None:
 
 
 def _salvar_se_novidade(nome_arquivo: str, conteudo: bytes) -> bool:
-    """Compara hash do conteúdo contra o já salvo em Landing -- só
-    sobrescreve e reporta novidade se for de fato diferente."""
+    
     caminho_destino = OUTPUT_DIR / nome_arquivo
     hash_novo = hashlib.sha256(conteudo).hexdigest()
 
@@ -116,7 +84,7 @@ def _salvar_se_novidade(nome_arquivo: str, conteudo: bytes) -> bool:
 
 
 def main() -> bool:
-    """Retorna True se pelo menos um dos CSVs teve conteúdo novo."""
+    
     resultado = achar_e_baixar_mais_recente()
 
     if resultado is None:

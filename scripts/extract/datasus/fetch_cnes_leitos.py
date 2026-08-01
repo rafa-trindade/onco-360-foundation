@@ -1,20 +1,11 @@
-"""
-CNES - Leitos (retrato mais recente, todas as UFs)
+"""Extração FTP CNES: Leitos (Retrato atual).
 
-Baixa, via FTP do DATASUS, os arquivos de Leitos do CNES -- usado pra
-trazer a contagem real de leitos por estabelecimento (o campo NULEITOS
-dentro do arquivo de Habilitações não é confiável, vem 0 pra quase
-tudo -- ver process_cnes_oncologia_instituicoes.py).
-
-Mesmo padrão do fetch_cnes_habilitacao.py: o diretório FTP é organizado
-por UF + competência (mês/ano), histórico desde 2005. Como queremos o
-retrato ATUAL (não a evolução histórica), lista tudo primeiro, acha a
-competência mais recente disponível, e baixa só os arquivos dessa
-competência (27 UFs).
+Regra de negócio: Obtém a contagem real de leitos (o campo NULEITOS da base de Habilitações não é confiável/frequentemente zerado).
+Otimização de rede: O diretório FTP particiona por UF/Mês com histórico longo. A extração identifica dinamicamente a competência mais recente e restringe o download a este corte transversal (27 UFs), descartando a série histórica.
 """
 import re
 import socket
-from scripts.extract.datasus.base_ftp import FTPPasvFix, FTP_HOST, baixar_arquivo, ensure_output_dir
+from scripts.extract.datasus.common.base_ftp import FTPPasvFix, FTP_HOST, baixar_arquivo, ensure_output_dir
 from scripts.common.paths import LANDING_DIR
 from scripts.common import exit_codes
 

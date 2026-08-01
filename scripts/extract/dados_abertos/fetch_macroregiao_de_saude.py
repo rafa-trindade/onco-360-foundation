@@ -1,21 +1,21 @@
-"""
-Macrorregião e Região de Saúde
+"""Extração HTTP/ZIP: Macrorregião e Região de Saúde (Dados Abertos).
 
-Baixa a lista de municípios com informações de macrorregião e região de
-saúde, publicada pelo Ministério da Saúde no Portal de Dados Abertos.
+Idempotência: Validação de novidade baseada em hash de conteúdo contra o manifesto persistido no bucket.
 """
-from scripts.extract.dados_abertos.base_dados_abertos import LANDING_DIR, baixar_e_extrair_csv
+from scripts.extract.dados_abertos.common.base_dados_abertos import LANDING_DIR, sincronizar_csv_zip
 from scripts.common import exit_codes
 
-CSV_DIR = LANDING_DIR / "macroregiao"
+URL = "https://s3.sa-east-1.amazonaws.com/ckan.saude.gov.br/dbgeral/macroregiao_de_saude_csv.zip"
+PASTA_BUCKET = "macroregiao"
+CHAVE_FONTE = "macroregiao_de_saude_csv.zip"
+CSV_LANDING = LANDING_DIR / "macroregiao" / "macroregiao_de_saude_raw.csv"
+
 
 def main() -> bool:
-    url = "https://s3.sa-east-1.amazonaws.com/ckan.saude.gov.br/dbgeral/macroregiao_de_saude_csv.zip"
-    landing_file = CSV_DIR / "macroregiao_de_saude_raw.csv"
-
-    novidade = baixar_e_extrair_csv(url, landing_file)
-    print("Lembre-se de garantir que o arquivo 'macro_geolocalizacao.xls' está na pasta Landing (data/landing/macroregiao/).")
+    novidade, _ = sincronizar_csv_zip(URL, CSV_LANDING, PASTA_BUCKET, CHAVE_FONTE)
+    print("Lembre-se: 'macro_geolocalizacao.xls' precisa estar em MANUAL_DIR/macroregiao/.")
     return novidade
+
 
 if __name__ == "__main__":
     novidade = main()

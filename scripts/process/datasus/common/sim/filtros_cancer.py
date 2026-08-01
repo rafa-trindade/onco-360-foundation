@@ -21,20 +21,21 @@ INCA e OMS/IARC para estatística de mortalidade por câncer):
   CID-9   235-239  Incerto/não especificado     -- excluído
 """
 
+import re
+
 COLUNA_CAUSABAS_CID9_CANDIDATAS = ["CAUSABAS", "CAUSAMORT", "CAUSAM", "CAUSABAS_O"]
+
+_PADRAO_CID10 = re.compile(r"^C(\d{2})")
 
 
 def filtro_cancer_cid10(registro: dict) -> bool:
-    """CAUSABAS entre C00 e C97 (neoplasia maligna). Coluna já confirmada
-    (mesmo layout usado no consolidado e no preliminar do SIM CID-10)."""
+    """CAUSABAS entre C00 e C97 (neoplasia maligna). Exige C seguido de
+    exatamente dois dígitos, evitando códigos malformados (C9, CX, CA)."""
     valor = str(registro.get("CAUSABAS", "")).strip().upper()
-    if len(valor) < 3 or valor[0] != "C":
+    m = _PADRAO_CID10.match(valor)
+    if not m:
         return False
-    try:
-        numero = int(valor[1:3])
-    except ValueError:
-        return False
-    return numero <= 97
+    return int(m.group(1)) <= 97
 
 
 def criar_filtro_cancer_cid9():
@@ -71,5 +72,49 @@ def criar_filtro_cancer_cid9():
         except ValueError:
             return False
         return 140 <= numero <= 208
+
+    return filtro
+
+# --- Filtros no formato chunk (DataFrame -> DataFrame) ---
+# Usados pelo modelo de processamento streaming (base_process_dbc_stream),
+# que filtra por bloco de linhas em memória antes de persistir, em vez de
+# registro a registro.
+
+def filtro_chunk_cancer_cid10(df):
+    """Mantém só linhas com CAUSABAS de neoplasia maligna (C00-C97).
+    Exige C seguido de exatamente dois dígitos (^C\\d{2}), evitando
+    códigos malformados como C9, CX ou CA."""
+    if "CAUSABAS" not in df.columns:
+        return df.iloc[0:0]
+    causa = df["CAUSABAS"].astype(str).str.strip().str.upper()
+    extraido = causa.str.extract(r"^C(\d{2})", expand=False)
+    valido = extraido.notna()
+    numero = extraido.where(valido, "99").astype(int)
+    return df[valido & (numero <= 97)]
+
+
+def criar_filtro_chunk_cancer_cid9():
+    """Cria o filtro de chunk pro CID-9 (CAUSABAS 140-208), detectando a
+    coluna de causa básica no primeiro chunk que a contiver e avisando
+    uma única vez qual foi usada."""
+    estado = {"coluna": None, "detectada": False}
+
+    def filtro(df):
+        if not estado["detectada"]:
+            estado["coluna"] = next((c for c in COLUNA_CAUSABAS_CID9_CANDIDATAS if c in df.columns), None)
+            estado["detectada"] = True
+            if estado["coluna"] is None:
+                print(f"[AVISO] Nenhuma coluna candidata a CAUSABAS encontrada no CID-9. "
+                      f"Colunas disponíveis: {list(df.columns)}")
+            else:
+                print(f"[INFO] Usando '{estado['coluna']}' como coluna de causa básica no CID-9.")
+
+        if estado["coluna"] is None or estado["coluna"] not in df.columns:
+            return df.iloc[0:0]
+
+        prefixo = df[estado["coluna"]].astype(str).str.strip().str.extract(r"^(\d{3})", expand=False)
+        valido = prefixo.notna()
+        numero = prefixo.where(valido, "0").astype(int)
+        return df[valido & (numero >= 140) & (numero <= 208)]
 
     return filtro

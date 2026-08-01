@@ -1,17 +1,16 @@
-"""
-SIM - Declaração de Óbito (DATASUS) - Dados Consolidados, CID-10, desde 1996
+"""Extração FTP DATASUS: SIM / Declaração de Óbito CID-10 (Desde 1996).
 
-Baixa os arquivos .dbc do FTP público do DATASUS (arquivos nacionais
-consolidados por ano, prefixo DOBR). 1996 é o início da era CID-10 no
-SIM (antes disso, ver fetch_sim_declaracao_obito_cid9.py).
+Regra de negócio: Extrai os arquivos nacionais consolidados anualmente (prefixo 'DOBR').
+Marco temporal: 1996 define o início da série histórica restrita à codificação CID-10 no SIM.
 """
 from datetime import datetime
-from scripts.extract.datasus.base_ftp import sincronizar_ftp
+from scripts.extract.datasus.common.base_ftp import sincronizar_ftp
 from scripts.common.paths import LANDING_DIR
 from scripts.common import exit_codes
 
 FTP_DIR = "/dissemin/publicos/SIM/CID10/DORES"
 OUTPUT_DIR = str(LANDING_DIR / "dbc_sim_declaracao_obito_cid10")
+PASTA_BUCKET = "datasus_sim"
 
 ANO_MINIMO = 1996
 
@@ -25,7 +24,7 @@ def regra_dobr(nome_arquivo: str) -> bool:
     return ANO_MINIMO <= int(ano_str) <= datetime.now().year
 
 if __name__ == "__main__":
-    sucesso, novidade = sincronizar_ftp(FTP_DIR, OUTPUT_DIR, regra_dobr)
+    sucesso, novidade = sincronizar_ftp(FTP_DIR, OUTPUT_DIR, regra_dobr, pasta_bucket=PASTA_BUCKET)
 
     if not sucesso:
         exit(exit_codes.ERRO)
