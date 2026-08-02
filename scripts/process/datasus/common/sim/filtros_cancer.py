@@ -87,10 +87,20 @@ def filtro_chunk_cancer_cid10(df):
     if "CAUSABAS" not in df.columns:
         return df.iloc[0:0]
     causa = df["CAUSABAS"].astype(str).str.strip().str.upper()
-    extraido = causa.str.extract(r"^C(\d{2})", expand=False)
-    valido = extraido.notna()
-    numero = extraido.where(valido, "99").astype(int)
-    return df[valido & (numero <= 97)]
+    
+    # Captura a letra (C ou D ou B) e os 2 números
+    # Para incluir C00-C97, D00-D48 e B21
+    m = causa.str.extract(r"^([CDB])(\d{2})", expand=True)
+    valido = m[0].notna()
+    
+    letra = m[0].where(valido, "X")
+    numero = m[1].where(valido, "99").astype(int)
+    
+    mask_c = (letra == 'C') & (numero <= 97)
+    mask_d = (letra == 'D') & (numero <= 48)
+    mask_b = (letra == 'B') & (numero == 21)
+    
+    return df[mask_c | mask_d | mask_b]
 
 
 def criar_filtro_chunk_cancer_cid9():

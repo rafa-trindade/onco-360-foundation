@@ -44,6 +44,17 @@ NOMES_POR_ARQUIVO: dict[str, str] = {
     "siasus_quimioterapia.parquet": "SIASUS - APAC de Quimioterapia",
     "siasus_radioterapia.parquet": "SIASUS - APAC de Radioterapia",
     "siasus_medicamentos_oncologicos.parquet": "SIASUS - APAC de Medicamentos Oncológicos",
+    "cancer_relacionado_ao_trabalho.parquet": "SINAN - Câncer Relacionado ao Trabalho",
+    "cito_colo_residencia.parquet": "SISCAN - Citopatológico do Colo do Útero (Residência)",
+    "cito_colo_atendimento.parquet": "SISCAN - Citopatológico do Colo do Útero (Atendimento)",
+    "histo_colo_residencia.parquet": "SISCAN - Histopatológico do Colo do Útero (Residência)",
+    "histo_colo_atendimento.parquet": "SISCAN - Histopatológico do Colo do Útero (Atendimento)",
+    "mamografia_residencia.parquet": "SISCAN - Mamografia (Residência)",
+    "mamografia_atendimento.parquet": "SISCAN - Mamografia (Atendimento)",
+    "cito_mama_residencia.parquet": "SISCAN - Citopatológico da Mama (Residência)",
+    "cito_mama_atendimento.parquet": "SISCAN - Citopatológico da Mama (Atendimento)",
+    "histo_mama_residencia.parquet": "SISCAN - Histopatológico da Mama (Residência)",
+    "histo_mama_atendimento.parquet": "SISCAN - Histopatológico da Mama (Atendimento)",
     "pns_2013_diagnostico_cancer.parquet": "PNS 2013 - Diagnóstico e Tipo de Câncer",
     "pns_2019_diagnostico_cancer.parquet": "PNS 2019 - Diagnóstico e Tipo de Câncer",
     "pns_2013_rastreamento_colo_utero.parquet": "PNS 2013 - Rastreamento de Colo do Útero",
@@ -79,6 +90,28 @@ DESCRICOES_POR_ARQUIVO: dict[str, str] = {
         "SIASUS: APAC de radioterapia do SUS desde 2008, com topografia, estadiamento e finalidade (radical/adjuvante/paliativa). ",
     "siasus_medicamentos_oncologicos.parquet":
         "SIASUS: APAC de medicamentos de alto custo com CID principal de neoplasia (C00-D48), desde 2008. ",
+    "cancer_relacionado_ao_trabalho.parquet":
+        "SINAN: notificações de câncer relacionado ao trabalho (agravo C80), com ocupação, situação no mercado de trabalho, exposição ocupacional a agentes cancerígenos (asbesto, sílica, benzeno, radiações, antineoplásicos, etc.) e evolução do caso. ",
+    "cito_colo_residencia.parquet":
+        "SISCAN: exames citopatológicos do colo do útero agregados por local de residência, com medidas e resultados do exame. Dados do TABNET desde 2013.",
+    "cito_colo_atendimento.parquet":
+        "SISCAN: exames citopatológicos do colo do útero agregados por local de atendimento, com medidas e resultados do exame. Dados do TABNET desde 2013.",
+    "histo_colo_residencia.parquet":
+        "SISCAN: exames histopatológicos do colo do útero agregados por local de residência, com medidas e resultados do exame. Dados do TABNET desde 2013.",
+    "histo_colo_atendimento.parquet":
+        "SISCAN: exames histopatológicos do colo do útero agregados por local de atendimento, com medidas e resultados do exame. Dados do TABNET desde 2013.",
+    "mamografia_residencia.parquet":
+        "SISCAN: exames de mamografia agregados por local de residência, com medidas e resultados do exame. Dados do TABNET desde 2013.",
+    "mamografia_atendimento.parquet":
+        "SISCAN: exames de mamografia agregados por local de atendimento, com medidas e resultados do exame. Dados do TABNET desde 2013.",
+    "cito_mama_residencia.parquet":
+        "SISCAN: exames citopatológicos da mama agregados por local de residência, com medidas e resultados do exame. Dados do TABNET desde 2013.",
+    "cito_mama_atendimento.parquet":
+        "SISCAN: exames citopatológicos da mama agregados por local de atendimento, com medidas e resultados do exame. Dados do TABNET desde 2013.",
+    "histo_mama_residencia.parquet":
+        "SISCAN: exames histopatológicos da mama agregados por local de residência, com medidas e resultados do exame. Dados do TABNET desde 2013.",
+    "histo_mama_atendimento.parquet":
+        "SISCAN: exames histopatológicos da mama agregados por local de atendimento, com medidas e resultados do exame. Dados do TABNET desde 2013.",
     "pns_2013_diagnostico_cancer.parquet":
         "PNS 2013 (IBGE): pessoas com diagnóstico de câncer autorreferido, tipo (categórico), idade no diagnóstico e limitação. ",
     "pns_2019_diagnostico_cancer.parquet":

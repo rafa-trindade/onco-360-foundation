@@ -1,7 +1,7 @@
 # Dicionário: obitos_cancer_prelim.parquet
 
-Óbitos por câncer (CID-10) dos dados **preliminares** do SIM, do ano corrente
-ainda não homologado pelo DATASUS. Espelha a estrutura do CID-10 consolidado.
+Óbitos relacionados à oncologia (CAUSABAS C00-C97, D00-D48 e B21) dos dados **preliminares** 
+do SIM, do ano corrente ainda não homologado pelo DATASUS. Espelha a estrutura do CID-10 consolidado.
 
 Fonte: SIM, arquivos preliminares (DOBR do ano corrente). Mesmo tratamento do
 consolidado. Pode vir vazio entre ciclos do DATASUS (nesse caso é publicado um

@@ -1,8 +1,12 @@
 """SIASUS - APAC de Medicamentos oncológicos (process).
 
 A base de medicamentos de alto custo (AM) é genérica; este recorte mantém
-apenas os registros cujo CID principal é uma neoplasia (capítulo II da CID-10,
-C00-D48).
+apenas os registros relacionados à oncologia (Visão ONCO360):
+- C00-C97 (Neoplasias Malignas)
+- D00-D09 (In situ) e D37-D48 (Comportamento incerto)
+- B21 (Doença pelo HIV resultando em neoplasia)
+- Códigos Z de histórico, seguimento e tratamento (Z51, Z08, Z85)
+* Exclui estritamente tumores benignos (D10-D36).
 """
 import sys
 
@@ -19,17 +23,36 @@ COLUNA_CID_CANDIDATAS = ["AP_CIDPRI", "AP_CIDSEC", "AP_CIDCAS"]
 
 
 def _eh_neoplasia(cid: str) -> bool:
-    """CID-10 do capítulo II (neoplasias): C00-C97 e D00-D48."""
+    """
+    Filtro ONCO360: Captura Cânceres (Malignos, In situ, Incertos) e 
+    histórico/tratamento oncológico. Exclui tumores benignos (D10-D36).
+    """
     if not cid:
         return False
     c = str(cid).strip().upper()
     if not c:
         return False
-    letra, resto = c[0], c[1:3]
+    
+    letra = c[0]
+    
+    # Neoplasias Malignas (Capítulo II: C00 até C97)
     if letra == "C":
         return True
-    if letra == "D" and resto.isdigit():
-        return 0 <= int(resto) <= 48
+        
+    # Neoplasias In Situ (D00-D09) e Comportamento Incerto (D37-D48)
+    if letra == "D" and len(c) >= 3 and c[1:3].isdigit():
+        num = int(c[1:3])
+        if (0 <= num <= 9) or (37 <= num <= 48):
+            return True
+
+    # HIV resultando em neoplasia maligna
+    if c.startswith("B21"):
+        return True
+
+    # Códigos Z de Oncologia (Quimio, Rádio, Seguimento, Histórico)
+    if c.startswith("Z51") or c.startswith("Z08") or c.startswith("Z85"):
+        return True
+
     return False
 
 

@@ -1,14 +1,13 @@
 # Dicionário: siasus_medicamentos_oncologicos.parquet
 
-APAC de Medicamentos de alto custo do SIASUS, recorte oncológico: apenas
-registros cujo CID principal é uma neoplasia (capítulo II da CID-10, C00-D48).
+APAC de Medicamentos de alto custo do SIASUS, recorte oncológico: apenas registros cujo CID principal está relacionado à oncologia (C00-C97, D00-D09, D37-D48, B21 e Z51/Z08/Z85). Exclui estritamente tumores benignos (D10-D36).
 Uma linha por procedimento autorizado. Desde 2008.
 
 Fonte: FTP DATASUS (SIASUS, arquivos AM), filtrado por CID de neoplasia.
 
 | Coluna | Tipo | Descrição |
 |---|---|---|
-| CID_PRINCIPAL | texto | CID principal (sempre uma neoplasia neste recorte). |
+| CID_PRINCIPAL | texto | CID principal (neoplasias malignas, in situ, incertas, ou códigos Z de histórico/tratamento). |
 | CID_PRINCIPAL_DESCRICAO | texto | Descrição do CID principal (tabela CID-10). |
 | CID_SECUNDARIO / CID_CAUSAS_ASSOCIADAS | texto | CIDs secundário e causas associadas. |
 | PESO_KG | texto | Peso do paciente em kg. |

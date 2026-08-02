@@ -1,7 +1,7 @@
 # Dicionário: obitos_cancer_cid10.parquet
 
-Óbitos por neoplasia maligna (CAUSABAS C00-C97) do SIM/DATASUS, era CID-10
-consolidada (1996 até o último ano homologado). Uma linha por óbito.
+bitos relacionados à oncologia (CAUSABAS C00-C97, D00-D48 e B21) do SIM/DATASUS,
+era CID-10 consolidada (1996 até o último ano homologado). Uma linha por óbito.
 
 Fonte: SIM (Sistema de Informações sobre Mortalidade), arquivos DORES/DOBR do
 FTP DATASUS. Campos categóricos decodificados para texto.
@@ -9,7 +9,7 @@ FTP DATASUS. Campos categóricos decodificados para texto.
 | Coluna | Tipo | Descrição |
 |---|---|---|
 | ID_REGISTRO | texto | Identificador sequencial do registro na origem (CONTADOR). |
-| CAUSA_BASICA | texto | Código CID-10 da causa básica do óbito (C00-C97). |
+| CAUSA_BASICA | texto | Código CID-10 da causa básica do óbito (C00-C97: Malignas; D00-D48: In situ e Incertas; B21: HIV). |
 | CAUSA_BASICA_DESCRICAO | texto | Descrição da causa básica (tabela CID-10 oficial). |
 | ANO_OBITO | inteiro | Ano do óbito, extraído da data. Coluna confiável para série temporal. |
 | DATA_OBITO | texto | Data do óbito no formato original DDMMAAAA. |
