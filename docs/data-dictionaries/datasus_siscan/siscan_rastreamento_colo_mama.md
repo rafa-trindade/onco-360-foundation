@@ -10,11 +10,11 @@ conforme o DATASUS publica.
 
 ## Visões disponíveis (10)
 Cada visão é publicada num parquet próprio (`{visao_id}.parquet`):
-- **Colo do útero — citopatológico:** `cito_colo_residencia`, `cito_colo_atendimento`
-- **Colo do útero — histopatológico (biópsia):** `histo_colo_residencia`, `histo_colo_atendimento`
-- **Mama — mamografia:** `mamografia_residencia`, `mamografia_atendimento`
-- **Mama — citopatológico (PAAF/punção):** `cito_mama_residencia`, `cito_mama_atendimento`
-- **Mama — histopatológico (biópsia):** `histo_mama_residencia`, `histo_mama_atendimento`
+- **Colo do útero - citopatológico:** `cito_colo_residencia`, `cito_colo_atendimento`
+- **Colo do útero - histopatológico (biópsia):** `histo_colo_residencia`, `histo_colo_atendimento`
+- **Mama - mamografia:** `mamografia_residencia`, `mamografia_atendimento`
+- **Mama - citopatológico (PAAF/punção):** `cito_mama_residencia`, `cito_mama_atendimento`
+- **Mama - histopatológico (biópsia):** `histo_mama_residencia`, `histo_mama_atendimento`
 
 As visões "por residência" cruzam por UF de residência da paciente; as "por
 atendimento" cruzam por UF do prestador de serviço.

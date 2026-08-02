@@ -228,17 +228,6 @@ FONTES: list[Fonte] = [
         process_modules=["scripts.process.dados_abertos.process_convenios_cancer"],
         nota="Atualização semanal via Dados Abertos. Dependência estrita: requer processamento prévio do CNES Habilitação (cruzamento por CNPJ).",
     ),
-    Fonte(
-        id="transparencia_convenios",
-        nome="Portal da Transparência - Convênios (repasses por instituição focada em câncer)",
-        descricao="Convênios federais cujo objeto menciona câncer/oncologia, cruzados por CNPJ com o CNES para confirmar instituições habilitadas em oncologia (com sinalizador adulto/pediátrico).",
-        pasta_bucket="transparencia",
-        automatica=True,
-        url_origem="https://portaldatransparencia.gov.br/download-de-dados/convenios",
-        extract_modules=["scripts.extract.dados_abertos.fetch_convenios_download_dados"],
-        process_modules=["scripts.process.dados_abertos.process_convenios_cancer"],
-        nota="Atualização semanal via Dados Abertos. Dependência estrita: requer processamento prévio do CNES Habilitação (cruzamento por CNPJ).",
-    ),
 ]
 
 

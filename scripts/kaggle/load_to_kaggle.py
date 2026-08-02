@@ -1,3 +1,10 @@
+"""Publicação do Data Lake (MinIO) no Kaggle como dataset versionado.
+
+Sincroniza o bucket para um cache local (baixando só o que mudou), remove
+órfãos e publica no Kaggle. Preserva tags/subtítulo/descrição configurados
+manualmente no dataset e usa um marcador de sucesso para tornar o reenvio
+idempotente entre execuções.
+"""
 import os
 import json
 import logging
@@ -6,17 +13,14 @@ from pathlib import Path
 from datetime import datetime
 from botocore.exceptions import ClientError
 
-from scripts.common.paths import BASE_DIR, PUBLISH_CACHE_DIR
+from scripts.common.paths import PUBLISH_CACHE_DIR
 from scripts.common import env
 
-# Kaggle usa tempfile.mkdtemp() internamente (respeita TEMP/TMP, não .env)
-# Necessário pra evitar encher disco C: com zips grandes
 _temp_dir_kaggle = PUBLISH_CACHE_DIR.parent / "_temp_zip"
 _temp_dir_kaggle.mkdir(parents=True, exist_ok=True)
 os.environ['TEMP'] = str(_temp_dir_kaggle)
 os.environ['TMP'] = str(_temp_dir_kaggle)
 
-# ------------------- Kaggle -------------------
 KAGGLE_DIR = env.KAGGLE_DIR
 KAGGLE_JSON = env.KAGGLE_JSON
 
@@ -26,15 +30,9 @@ if KAGGLE_JSON.exists():
 
 from kaggle.api.kaggle_api_extended import KaggleApi
 
-# -----------------------------
-# Logging
-# -----------------------------
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-# -----------------------------
-# Configurações MinIO 
-# -----------------------------
 MINIO_ENDPOINT = env.MINIO_ENDPOINT
 if MINIO_ENDPOINT == "http://minio:9000":
     MINIO_ENDPOINT = "http://localhost:9000"
@@ -49,9 +47,7 @@ FILES_TO_IGNORE = {'.gitkeep'}
 
 CACHE_DIR = PUBLISH_CACHE_DIR
 
-# ----------------------------
-# S3 / MinIO Client
-# ----------------------------
+
 def criar_s3_client():
     return boto3.client(
         "s3",
@@ -60,9 +56,7 @@ def criar_s3_client():
         aws_secret_access_key=MINIO_SECRET_KEY,
     )
 
-# ----------------------------
-# Main Process
-# ----------------------------
+
 def load_lake_to_kaggle():
     logger.info("Autenticando na API do Kaggle...")
     api = KaggleApi()
@@ -75,14 +69,13 @@ def load_lake_to_kaggle():
     s3_client = criar_s3_client()
     
     paginator = s3_client.get_paginator('list_objects_v2')
-    objetos_s3 = {}  # {chave: tamanho}
+    objetos_s3 = {} 
     
     try:
         for page in paginator.paginate(Bucket=MINIO_BUCKET):
             if 'Contents' in page:
                 for obj in page['Contents']:
                     caminho_obj = Path(obj['Key'])
-                    # Ignora arquivos da lista exata e qualquer arquivo com extensão .json
                     if caminho_obj.name not in FILES_TO_IGNORE and caminho_obj.suffix.lower() != '.json':
                         objetos_s3[obj['Key']] = obj['Size']
     except ClientError as e:
@@ -95,8 +88,7 @@ def load_lake_to_kaggle():
 
     logger.info(f"Cache persistente: {CACHE_DIR}")
 
-    # Baixa só o que é novo ou mudou de tamanho desde a última
-    # publicação -- reaproveita o que já está no cache local
+
     baixados = 0
     reaproveitados = 0
     for s3_key, tamanho_remoto in objetos_s3.items():
@@ -112,10 +104,6 @@ def load_lake_to_kaggle():
 
     logger.info(f"✔ {baixados} arquivo(s) baixado(s), {reaproveitados} reaproveitado(s) do cache local.")
 
-    # Limpa do cache local qualquer arquivo que não existe mais no
-    # bucket (evita publicar dado obsoleto/removido na origem).
-    # Exclui os arquivos de controle nossos (não vêm do bucket, não
-    # devem nunca ser tratados como órfãos).
     ARQUIVOS_DE_CONTROLE = {"dataset-metadata.json", ".ultima_publicacao_sucesso"}
     chaves_esperadas = set(objetos_s3.keys())
     removidos = 0
@@ -128,10 +116,8 @@ def load_lake_to_kaggle():
     if removidos:
         logger.info(f"✔ {removidos} arquivo(s) órfão(s) removido(s) do cache (não existem mais no bucket).")
 
-    # Arquivo marcador confirma que última publicação terminou (protege contra retry de falhas)
     marcador_sucesso = CACHE_DIR / ".ultima_publicacao_sucesso"
 
-    # Invalida marcador se cache mudou (novo/removido) nessa execução
     if (baixados > 0 or removidos > 0) and marcador_sucesso.exists():
         marcador_sucesso.unlink()
 
@@ -146,11 +132,7 @@ def load_lake_to_kaggle():
 
     metadata_path = CACHE_DIR / "dataset-metadata.json"
 
-    # Checa se o dataset já existe ANTES de decidir o metadata --
-    # se existir, tenta preservar tags/subtítulo/descrição já
-    # configurados manualmente no Kaggle, em vez de sobrescrever
-    # com um metadata mínimo do zero (bug identificado: isso
-    # apagava configurações manuais a cada publicação).
+
     try:
         api.dataset_list_files(dataset_id)
         dataset_exists = True
@@ -171,7 +153,6 @@ def load_lake_to_kaggle():
             with open(metadata_path, "r") as m:
                 metadata = json.load(m)
 
-            # Trata JSON com dupla codificação (quirk da API Kaggle)
             if isinstance(metadata, str):
                 logger.info("Metadata veio com codificação JSON dupla (bug conhecido da API) -- desembrulhando...")
                 metadata = json.loads(metadata)
@@ -179,8 +160,8 @@ def load_lake_to_kaggle():
             if not isinstance(metadata, dict):
                 raise TypeError(f"Metadata existente não é um dict mesmo após desembrulhar (veio como {type(metadata).__name__}).")
 
-            metadata["id"] = dataset_id  # garante que está certo, independente do que veio
-            metadata["resources"] = []  # API redetecta arquivos do cache
+            metadata["id"] = dataset_id 
+            metadata["resources"] = []  
 
             logger.info("✔ Metadados existentes preservados com sucesso.")
         except Exception as e:
@@ -189,7 +170,6 @@ def load_lake_to_kaggle():
                             f"manualmente podem ser perdidos nesta publicação.")
 
     if metadata is None:
-        # Primeira publicação ou fallback se download falhou
         metadata = {
             "title": DATASET_TITLE,
             "id": dataset_id,
@@ -202,7 +182,6 @@ def load_lake_to_kaggle():
         m.flush()
         os.fsync(m.fileno())
 
-    # Validação: garante metadata válido (erro mais claro que o do Kaggle)
     with open(metadata_path, "r") as m:
         conteudo_verificado = json.load(m)
     if not isinstance(conteudo_verificado, dict):
@@ -233,7 +212,6 @@ def load_lake_to_kaggle():
             )
             logger.info(f"✔ Dataset {dataset_id} criado com sucesso!")
 
-        # Marcador só escrito se publicação terminou (retry automático em falhas)
         marcador_sucesso.write_text(datetime.now().isoformat())
 
     except Exception as e:

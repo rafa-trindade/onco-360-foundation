@@ -33,8 +33,7 @@ def _modulo_existe(modulo: str) -> bool:
     try:
         return importlib.util.find_spec(modulo) is not None
     except ModuleNotFoundError:
-        # find_spec levanta (em vez de retornar None) quando um pacote-pai
-        # do caminho não existe -- para o registro, ausente é ausente.
+
         return False
 
 
@@ -85,7 +84,6 @@ def rodar_fonte(fonte: Fonte, pular_extract: bool) -> dict:
         return {"id": fonte.id, "extract": extract, "process": exit_codes.SEM_NOVIDADE,
                 "novidade": False}
 
-    # Fontes manuais e flag --process-only delegam ao próprio process a validação de novidade via manifesto.
     deve_processar = (
         extract == exit_codes.SUCESSO
         or not fonte.automatica
@@ -110,7 +108,7 @@ def rodar_fonte(fonte: Fonte, pular_extract: bool) -> dict:
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Orquestrador do pipeline flor-de-aco-foundation")
+    parser = argparse.ArgumentParser(description="Orquestrador do pipeline onco-360-foundation")
     parser.add_argument("--so", help="Lista de ids ou pastas de bucket, separados por vírgula")
     parser.add_argument("--pular", help="Lista de ids ou pastas de bucket a ignorar")
     parser.add_argument("--process-only", action="store_true", help="Pula o extract")
