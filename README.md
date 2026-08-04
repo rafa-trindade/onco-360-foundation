@@ -1,6 +1,6 @@
 ![header](docs/images/onco-banner.png)
 
-[![License: CC0-1.0](https://img.shields.io/badge/License-CC0_1.0-c8922a?labelColor=0d2137)](LICENSE)
+[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-c8922a?labelColor=0d2137)](LICENSE)
 [![Kaggle](https://img.shields.io/badge/Dataset-Kaggle-7ab3d4?labelColor=0d2137&logo=kaggle&logoColor=7ab3d4)](https://www.kaggle.com/datasets/rafatrindade/onco-360)
 [![GitHub Stars](https://img.shields.io/github/stars/rafa-trindade/onco-360-foundation?style=flat&labelColor=0d2137&color=4a7fa5)](https://github.com/rafa-trindade/onco-360-foundation)
 
@@ -19,6 +19,19 @@ O dataset final está disponível no [Kaggle](https://www.kaggle.com/datasets/ra
 > Não existe uma pasta local persistida com o histórico completo de dados brutos. O diretório de landing é puramente um scratch space temporário - cada arquivo é baixado, processado e enviado direto ao bucket (MinIO), com o local sendo apagado logo em seguida. A detecção de "isso já existe, não precisa reprocessar" é feita comparando contra um **manifesto** (`_manifest.json`) mantido no próprio bucket, não contra disco local. Cada fonte publica na sua pasta de bucket, e fontes que compartilham a mesma pasta (ex: as três APAC do SIASUS) consolidam seus metadados no mesmo manifesto.
 
 O fluxo é orquestrado por `scripts/run_all.py` em três etapas sequenciais: **extract** (baixa da origem), **process** (filtra o recorte oncológico, decodifica para colunas legíveis e converte para Parquet) e **load** (gera o manifesto de metadados e publica no Kaggle). O `process` só roda se o `extract` reportar dado novo, e o `load` só publica quando pelo menos uma fonte automática traz novidade real - evitando versões vazias no Kaggle e preservando tags/metadados configurados manualmente entre publicações.
+
+---
+
+## 💼 Aplicações Corporativas e Consultoria
+
+A arquitetura de dados deste projeto foi desenhada para ir além da pesquisa acadêmica, resolvendo gargalos de inteligência de negócios no ecossistema de saúde suplementar e farmacêutico. O **Onco-360** pode ser produtizado para:
+
+* **Indústria Farmacêutica e Pesquisa Clínica:** Mapeamento de incidência populacional e infraestrutura habilitada para otimizar o direcionamento de estudos clínicos e a distribuição de medicamentos oncológicos.
+* **Hospitais e Redes Oncológicas:** Análise de concorrência e capacidade de atendimento cruzando repasses federais, procedimentos realizados e leitos habilitados na região.
+* **Healthtechs:** Alimentação de modelos preditivos e plataformas de gestão populacional utilizando o histórico consolidado de diagnósticos e tratamentos.
+
+📩 **A sua organização precisa internalizar inteligência de dados em oncologia?** 
+[Conecte-se comigo no LinkedIn](https://www.linkedin.com/in/rafatrindade/) para estruturarmos pipelines customizados, integração em nuvem e governança de dados de saúde.
 
 ---
 
@@ -260,7 +273,12 @@ onco360-metadados.csv   -- manifesto de todos os arquivos: fonte(s), descrição
 
 ## 📄 Licença e Créditos
 
-Este dataset consolidado é disponibilizado sob licença **CC0 1.0** (domínio público). Isso se refere ao trabalho de curadoria, padronização e harmonização realizado neste repositório - os dados originais permanecem de titularidade e responsabilidade das instituições abaixo, que devem ser citadas ao utilizar cada fonte individualmente:
+Este projeto opera sob um modelo duplo de licenciamento, separando a engenharia de software dos dados públicos:
+
+1. **Código-fonte e Arquitetura:** O pipeline de extração e os scripts deste repositório estão licenciados sob a **GNU GPLv3**. Você é livre para usar e modificar o código, desde que qualquer modificação ou produto derivado também seja de código aberto sob a mesma licença.
+2. **Dataset Consolidado:** Os arquivos de dados publicados no Kaggle são disponibilizados sob licença **CC0 1.0 (Domínio Público)**. Isso se refere estritamente ao trabalho de curadoria, padronização e harmonização realizado neste repositório.
+
+Os dados originais permanecem de titularidade e responsabilidade das instituições abaixo, que devem ser citadas ao utilizar cada fonte individualmente:
 
 - **DATASUS (CNES, SIM, Painel de Oncologia, SIASUS, SISCAN, SINAN):**
   > BRASIL. Ministério da Saúde. DATASUS. Brasília, DF: Ministério da Saúde. Disponível em: <https://datasus.saude.gov.br/>.
