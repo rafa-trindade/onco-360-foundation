@@ -22,16 +22,13 @@ O fluxo é orquestrado por `scripts/run_all.py` em três etapas sequenciais: **e
 
 ---
 
-## 💼 Aplicações Corporativas e Consultoria
+## 💼 Aplicações
 
 A arquitetura de dados deste projeto foi desenhada para ir além da pesquisa acadêmica, resolvendo gargalos de inteligência de negócios no ecossistema de saúde suplementar e farmacêutico. O **Onco-360** pode ser produtizado para:
 
 * **Indústria Farmacêutica e Pesquisa Clínica:** Mapeamento de incidência populacional e infraestrutura habilitada para otimizar o direcionamento de estudos clínicos e a distribuição de medicamentos oncológicos.
 * **Hospitais e Redes Oncológicas:** Análise de concorrência e capacidade de atendimento cruzando repasses federais, procedimentos realizados e leitos habilitados na região.
 * **Healthtechs:** Alimentação de modelos preditivos e plataformas de gestão populacional utilizando o histórico consolidado de diagnósticos e tratamentos.
-
-📩 **A sua organização precisa internalizar inteligência de dados em oncologia?** 
-[Conecte-se comigo no LinkedIn](https://www.linkedin.com/in/rafatrindade/) para estruturarmos pipelines customizados, integração em nuvem e governança de dados de saúde.
 
 ---
 
