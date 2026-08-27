@@ -44,6 +44,7 @@ MINIO_BUCKET = env.MINIO_BUCKET
 DATASET_NAME = 'onco-360'
 DATASET_TITLE = 'onco-360'
 FILES_TO_IGNORE = {'.gitkeep'}
+SEMPRE_ATUALIZAR = {"onco360-metadados.csv"}
 
 CACHE_DIR = PUBLISH_CACHE_DIR
 
@@ -93,7 +94,8 @@ def load_lake_to_kaggle():
     reaproveitados = 0
     for s3_key, tamanho_remoto in objetos_s3.items():
         destino = CACHE_DIR / s3_key
-        if destino.exists() and destino.stat().st_size == tamanho_remoto:
+        inalterado = destino.exists() and destino.stat().st_size == tamanho_remoto
+        if inalterado and destino.name not in SEMPRE_ATUALIZAR:
             reaproveitados += 1
             continue
 
