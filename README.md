@@ -1,4 +1,4 @@
-![header](docs/images/onco-banner-powered.png)
+![header](docs/images/onco360-banner-powered.png)
 
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-c8922a?labelColor=0d2137)](LICENSE)
 [![Kaggle](https://img.shields.io/badge/Dataset-Kaggle-7ab3d4?labelColor=0d2137&logo=kaggle&logoColor=7ab3d4)](https://www.kaggle.com/datasets/rafatrindade/onco-360)
